@@ -1,21 +1,58 @@
 import requests
 import pandas as pd
+import json
+import boto3
+from io import BytesIO
+
+s3 = boto3.client('s3')
+
+BUCKET = 'fiap-tc-fase-2-bkt'
+PREFIX = 'bronze/'
 
 url = "https://servicodados.ibge.gov.br/api/v1/localidades/municipios"
 
-resposta = requests.get(url)
-resposta.raise_for_status()
+key = f"{PREFIX}municipiosIBGE.parquet"
 
-dados = resposta.json()
+def lambda_handler(event, context):
+    try:
+        resposta = requests.get(url)
+        resposta.raise_for_status()
 
-print(f"Quantidade de registros retornados: {len(dados)}")
+        dados = resposta.json()
 
-municipios = pd.DataFrame([
-    {
-        "id_municipio": str(municipio["id"]),
-        "nome_municipio": municipio["nome"]
-    }
-    for municipio in dados
-])
+        print(f"Quantidade de registros retornados: {len(dados)}")
 
-print(municipios.head())
+        municipios = pd.DataFrame([
+            {
+                "id_municipio": str(municipio["id"]),
+                "nome_municipio": municipio["nome"]
+            }
+            for municipio in dados
+        ])
+
+        parquet_buffer = BytesIO()
+        municipios.to_parquet(parquet_buffer)
+        
+        s3.put_object(
+            Bucket=BUCKET,
+            Key=key,
+            Body=parquet_buffer.getvalue()
+        )    
+
+        return {
+            'statusCode': 200,
+            'body': json.dumps({
+                'message': 'Tabela de municipios do IBGE processada e salva no S3 com sucesso',
+                'bucket': BUCKET,
+                'tables': key
+            })
+        }
+        
+    except Exception as e:
+        print(f"Erro: {str(e)}")
+        return {
+            'statusCode': 500,
+            'body': json.dumps({
+                'error': str(e)
+            })
+        }    
