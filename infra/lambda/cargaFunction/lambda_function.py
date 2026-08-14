@@ -6,47 +6,47 @@ import pandas as pd
 import boto3
 
 #primeval-melody-504216-n5
-
 s3 = boto3.client("s3")
 BUCKET = "fiap-tc-fase-2-bkt"
+BILLING_PROJECT_ID = "primeval-melody-504216-n5"
 
-def create_data_folder():
-    if not os.path.exists("data"):
-        os.makedirs("data")
+def handler(event, context):
+    key = event["Records"][0]["s3"]["object"]["key"]
+    filename = os.path.basename(key)
+    local_output = f"/tmp/{filename.replace('.csv', '.parquet')}"
 
-create_data_folder()
-
-
-def extract_data(url, filename):
     try:
-        urllib.request.urlretrieve(url, filename)
-    except Exception as e:
-        print(e)
 
-def get_data_to_bigdata(table_id, billing_project_id):
-    try:
-        df = bd.read_table(dataset_id="br_inep_avaliacao_alfabetizacao",
-                      table_id=table_id, 
-                      billing_project_id=billing_project_id)
-        print(df.head())
-        df.to_csv(f"data/{table_id}.csv", index=False)
+        # Check /tmp space (10 GB limit)
+        tmp_usage = sum(
+            os.path.getsize(f"/tmp/{f}")
+            for f in os.listdir("/tmp") if os.path.isfile(f"/tmp/{f}")
+        )
+        if tmp_usage > 9 * 1024**3:  # 9 GB safety margin
+            raise RuntimeError("Approaching /tmp storage limit")
 
-    except Exception as e:
-        print(e)
+        #tables = ["municipio", "dicionario", "meta_alfabetizacao_brasil", "meta_alfabetizacao_municipio", "meta_alfabetizacao_uf", "alunos", "uf"]
+        tables = ["municipio", "dicionario", "uf"]
+        for table_id in tables:
+            print(f"Getting data for table: {table_id}")
 
-def upload_to_s3(file_path, bucket, object_name):
-    try:
-        s3.upload_file(file_path, bucket, object_name)
-        print(f"File {file_path} uploaded to S3 bucket {bucket} as {object_name}")
-    except Exception as e:
-        print(f"Error uploading file to S3: {e}")
+            df = bd.read_table(dataset_id="br_inep_avaliacao_alfabetizacao",
+                        table_id=table_id, 
+                        billing_project_id=BILLING_PROJECT_ID)
+
+            parquet_buffer = BytesIO()
+            df.to_parquet(parquet_buffer)
 
 
-#tables = ["municipio", "dicionario", "meta_alfabetizacao_brasil", "meta_alfabetizacao_municipio", "meta_alfabetizacao_uf", "alunos", "uf"]
-tables = ["municipio", "dicionario", "uf"]
-for table_id in tables:
-    print(f"Getting data for table: {table_id}")
-    #get_data_to_bigdata(table_id=table_id, billing_project_id="primeval-melody-504216-n5")
-    upload_to_s3(file_path=f"data/{table_id}.csv", bucket=BUCKET, object_name=f"{table_id}.csv")
-    print(f"Data for table {table_id} saved to data/{table_id}.csv")
-    print("\n\n")
+            df.to_parquet(local_output, engine="pyarrow", compression="snappy")
+
+            # Upload result back to S3
+            output_key = key.replace("raw/", "processed/").replace(".csv", ".parquet")
+            s3.upload_file(local_output, BUCKET, output_key)
+
+            return {"status": "success", "output_key": output_key}
+
+    finally:
+        # Clean up /tmp
+        if os.path.exists(local_output):
+            print(local_output)
