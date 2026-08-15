@@ -68,6 +68,12 @@ def transform(df):
  
     return df
  
+def load(input_path, spark_session):
+
+    df = spark_session.read.parquet(INPUT_PATH)
+    
+    return df
+
  
 def validate(df):
  
@@ -97,7 +103,7 @@ def main():
 
     sc = SparkContext()
     glueContext = GlueContext(sc)
-    spark = glueContext.spark_session
+    spark_session = glueContext.spark_session
     job = Job(glueContext)
     job.init(args['JOB_NAME'], args)
  
@@ -107,8 +113,8 @@ def main():
  
     print(f"\nLendo Bronze:")
     print(INPUT_PATH)
- 
-    df = spark.read.parquet(INPUT_PATH)
+
+    df = load(INPUT_PATH, spark_session)
  
     print("\nSchema original:")
     df.printSchema()
@@ -124,6 +130,7 @@ def main():
         df_silver
         .write
         .mode("overwrite")
+        .partitionBy('ano')
         .option("compression", "snappy")
         .parquet(OUTPUT_PATH)
     )
