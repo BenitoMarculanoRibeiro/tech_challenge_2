@@ -19,21 +19,26 @@ from pyspark.sql.functions import (
     col,
     current_timestamp,
     upper,
-    trim
+    trim,
+    coalesce
 )
 
- 
-INPUT_PATH = (
+INPUT_DICIONARIO = (
+    "s3://tc2-bronze/"
+    "dicionario//"
+)
+
+INPUT_PATH_BRONZE = (
     "s3://tc2-bronze/"
     "uf/"
 )
  
-OUTPUT_PATH = (
+OUTPUT_PATH_SILVER = (
     "s3://tc2-silver/"
     "uf/"
 )
   
-def transform(df):
+def transform(df, df_dicionario):
  
     # Remove registros completamente duplicados
     df = df.dropDuplicates()
@@ -59,7 +64,17 @@ def transform(df):
             col("media_portugues").cast("double")
         )
     )
- 
+
+    # Fazer o de para com o df dicionario 
+    df_dicionario = df_dicionario.filter((col("id_tabela") == 'uf') & (col("nome_coluna") == "rede"))
+    df_dicionario = df_dicionario.select("chave","valor")
+
+    df = df.join(
+        df_dicionario,
+        df["rede"] == df_dicionario["chave"],
+        how="left"
+    )
+
     # Adiciona timestamp de processamento
     df = df.withColumn(
         "processed_at",
@@ -70,7 +85,7 @@ def transform(df):
  
 def load(input_path, spark_session):
 
-    df = spark_session.read.parquet(INPUT_PATH)
+    df = spark_session.read.parquet(input_path)
     
     return df
 
@@ -112,19 +127,20 @@ def main():
     print("========================================")
  
     print(f"\nLendo Bronze:")
-    print(INPUT_PATH)
+    print(INPUT_PATH_BRONZE)
 
-    df = load(INPUT_PATH, spark_session)
+    df_bronze = load(INPUT_PATH_BRONZE, spark_session)
+    df_dicionario = load(INPUT_DICIONARIO, spark_session)
  
     print("\nSchema original:")
-    df.printSchema()
+    df_bronze.printSchema()
  
-    df_silver = transform(df)
+    df_silver = transform(df_bronze, df_dicionario)
  
     validate(df_silver)
  
     print("\nGravando Silver:")
-    print(OUTPUT_PATH)
+    print(OUTPUT_PATH_SILVER)
  
     (
         df_silver
@@ -132,7 +148,7 @@ def main():
         .mode("overwrite")
         .partitionBy('ano')
         .option("compression", "snappy")
-        .parquet(OUTPUT_PATH)
+        .parquet(OUTPUT_PATH_SILVER)
     )
  
     print("\n========================================")
