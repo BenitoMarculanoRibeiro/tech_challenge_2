@@ -6,8 +6,8 @@ from io import BytesIO
 
 s3 = boto3.client('s3')
 
-BUCKET = 'fiap-tc-fase-2-bkt'
-PREFIX = 'bronze/'
+BUCKET = 'tc2-bronze'
+PREFIX = 'municipiosIBGE/'
 
 url = "https://servicodados.ibge.gov.br/api/v1/localidades/municipios"
 
