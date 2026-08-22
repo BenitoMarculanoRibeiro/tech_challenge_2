@@ -22,7 +22,8 @@ from pyspark.sql.functions import (
     trim,
     coalesce,
     lit,
-    broadcast
+    broadcast,
+    when
 )
 
 # Colunas da bronze/municipio que possuem de-para no dicionario:
@@ -34,6 +35,27 @@ COLUNAS_DE_PARA = {
 
 VALOR_NAO_MAPEADO = "Nao informado"
 
+
+# A meta_alfabetizacao_municipio cobre apenas a rede "Municipal" (codigo 3 do
+# dicionario) e a meta_alfabetizacao_brasil apenas a rede "Pública" (codigo 5,
+# "Pública (Estadual e Municipal)"). Nas demais redes as metas ficam nulas,
+# para nao comparar a taxa de uma rede com a meta de outra.
+REDES_COM_META_MUNICIPIO = [3]
+REDES_COM_META_BRASIL = [5]
+
+# Nomes das colunas de meta na bronze. As tres bases de meta (uf, municipio,
+# brasil) usam os mesmos nomes, por isso na silver cada uma recebe o prefixo do
+# seu escopo: meta_alfabetizacao_2030 -> meta_alfabetizacao_municipio_2030.
+COLUNAS_META_ORIGEM = [
+    "meta_alfabetizacao_2024",
+    "meta_alfabetizacao_2025",
+    "meta_alfabetizacao_2026",
+    "meta_alfabetizacao_2027",
+    "meta_alfabetizacao_2028",
+    "meta_alfabetizacao_2029",
+    "meta_alfabetizacao_2030",
+]
+
 INPUT_DICIONARIO = (
     "s3://tc2-bronze/"
     "dicionario/"
@@ -42,6 +64,16 @@ INPUT_DICIONARIO = (
 INPUT_MUNICIPIOS_IBGE = (
     "s3://tc2-bronze/"
     "municipio_ibge/"
+)
+
+INPUT_META_ALFABETIZACAO_MUNICIPIO = (
+    "s3://tc2-bronze/"
+    "meta_alfabetizacao_municipio/"
+)
+
+INPUT_META_ALFABETIZACAO_BRASIL = (
+    "s3://tc2-bronze/"
+    "meta_alfabetizacao_brasil/"
 )
 
 INPUT_PATH_BRONZE = (
@@ -54,7 +86,8 @@ OUTPUT_PATH_SILVER = (
     "municipio/"
 )
   
-def transform(df, df_dicionario, df_municipios_ibge):
+def transform(df, df_dicionario, df_municipios_ibge, df_meta_municipio,
+              df_meta_brasil):
  
     # Remove registros completamente duplicados
     df = df.dropDuplicates()
@@ -99,6 +132,15 @@ def transform(df, df_dicionario, df_municipios_ibge):
     # autocontido quando lido arquivo a arquivo.
     df = df.withColumn("ano_referencia", col("ano"))
 
+    # Traz as metas de alfabetizacao do municipio e do Brasil
+    df = join_meta_alfabetizacao(
+        df, df_meta_municipio, "municipio", REDES_COM_META_MUNICIPIO,
+        chave_geografica="id_municipio"
+    )
+    df = join_meta_alfabetizacao(
+        df, df_meta_brasil, "brasil", REDES_COM_META_BRASIL
+    )
+
     # Adiciona timestamp de processamento
     df = df.withColumn(
         "processed_at",
@@ -107,6 +149,79 @@ def transform(df, df_dicionario, df_municipios_ibge):
  
     return df
  
+def join_meta_alfabetizacao(df, df_meta, escopo, redes_com_meta,
+                            chave_geografica=None):
+    """Traz as metas de alfabetizacao (2024..2030) de uma das bases de meta.
+
+    As bases de meta usam os mesmos nomes de coluna na bronze, entao aqui cada
+    uma recebe o prefixo do seu escopo, evitando colisao e deixando explicito
+    de onde a meta vem.
+
+    O join sempre casa o ano_referencia do fato com o ano da meta e, quando a
+    base tem recorte geografico, tambem a chave informada. Cada base tem uma
+    unica linha por (chave, ano), logo o join nao multiplica registros do fato.
+
+    - normaliza chave e ano nos dois lados, para nao perder match por espaco,
+      caixa ou tipo;
+    - usa broadcast, porque as metas sao pequenas e assim evitamos o shuffle;
+    - left join para nunca descartar registro do fato sem meta;
+    - preenche a meta apenas nas redes de redes_com_meta: cada base cobre uma
+      unica rede, e colar meta de rede publica em rede privada/federal
+      induziria a comparacoes erradas na gold.
+    """
+
+    colunas_meta = [
+        coluna.replace(
+            "meta_alfabetizacao_",
+            f"meta_alfabetizacao_{escopo}_"
+        )
+        for coluna in COLUNAS_META_ORIGEM
+    ]
+
+    selecao = [col("ano").cast("integer").alias("_ano_meta")]
+
+    if chave_geografica:
+        selecao.append(
+            upper(trim(col(chave_geografica).cast("string")))
+            .alias("_chave_meta")
+        )
+
+    selecao += [
+        col(origem).cast("double").alias(destino)
+        for origem, destino in zip(COLUNAS_META_ORIGEM, colunas_meta)
+    ]
+
+    df_meta = df_meta.select(*selecao)
+
+    condicao = col("ano_referencia") == col("_ano_meta")
+
+    if chave_geografica:
+        condicao = condicao & (
+            upper(trim(col(chave_geografica).cast("string")))
+            == col("_chave_meta")
+        )
+
+    df = (
+        df
+        .join(
+            broadcast(df_meta),
+            condicao,
+            how="left"
+        )
+        .drop("_ano_meta", "_chave_meta")
+    )
+
+    rede_com_meta = col("rede").isin(redes_com_meta)
+
+    for coluna in colunas_meta:
+        df = df.withColumn(
+            coluna,
+            when(rede_com_meta, col(coluna))
+        )
+
+    return df
+
+
 def join_municipios_ibge(df, df_municipios_ibge):
     """Traz nome_municipio e sigla_uf do IBGE para o fato, via id_municipio.
 
@@ -208,6 +323,19 @@ def validate(df):
 
     sem_ibge = df.filter(col("nome_municipio").isNull()).count()
     print(f"\nRegistros sem correspondência no IBGE: {sem_ibge}")
+
+    for escopo, redes in (
+        ("municipio", REDES_COM_META_MUNICIPIO),
+        ("brasil", REDES_COM_META_BRASIL),
+    ):
+        sem_meta = df.filter(
+            col("rede").isin(redes)
+            & col(f"meta_alfabetizacao_{escopo}_2030").isNull()
+        ).count()
+        print(
+            f"\nRegistros da rede com meta de {escopo}, porém sem meta: "
+            f"{sem_meta}"
+        )
  
     print("\nAnos disponíveis:")
     df.select("ano").distinct().orderBy("ano").show()
@@ -251,12 +379,16 @@ def main():
     df_bronze = load(INPUT_PATH_BRONZE, spark_session)
     df_dicionario = load(INPUT_DICIONARIO, spark_session)
     df_municipios_ibge = load(INPUT_MUNICIPIOS_IBGE, spark_session)
+    df_meta_municipio = load(
+        INPUT_META_ALFABETIZACAO_MUNICIPIO, spark_session
+    )
+    df_meta_brasil = load(INPUT_META_ALFABETIZACAO_BRASIL, spark_session)
  
     print("\nSchema original:")
     df_bronze.printSchema()
  
-    df_silver = transform(df_bronze, df_dicionario,
-                          df_municipios_ibge)
+    df_silver = transform(df_bronze, df_dicionario, df_municipios_ibge,
+                          df_meta_municipio, df_meta_brasil)
  
     validate(df_silver)
  
