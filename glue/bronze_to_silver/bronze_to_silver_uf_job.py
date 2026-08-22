@@ -20,8 +20,19 @@ from pyspark.sql.functions import (
     current_timestamp,
     upper,
     trim,
-    coalesce
+    coalesce,
+    lit,
+    broadcast
 )
+
+# Colunas da bronze/uf que possuem de-para no dicionario:
+# nome da coluna na origem -> nome da coluna descritiva na silver
+COLUNAS_DE_PARA = {
+    "rede": "rede_descricao",
+    "serie": "serie_descricao",
+}
+
+VALOR_NAO_MAPEADO = "Nao informado"
 
 INPUT_DICIONARIO = (
     "s3://tc2-bronze/"
@@ -65,15 +76,14 @@ def transform(df, df_dicionario):
         )
     )
 
-    # Fazer o de para com o df dicionario 
-    df_dicionario = df_dicionario.filter((col("id_tabela") == 'uf') & (col("nome_coluna") == "rede"))
-    df_dicionario = df_dicionario.select("chave","valor")
+    # Fazer o de para com o df dicionario
+    for coluna, coluna_descricao in COLUNAS_DE_PARA.items():
+        df = apply_dictionary_lookup(df, df_dicionario, coluna, coluna_descricao)
 
-    df = df.join(
-        df_dicionario,
-        df["rede"] == df_dicionario["chave"],
-        how="left"
-    )
+    # Mantem o ano dentro dos arquivos: o partitionBy grava o valor apenas no
+    # caminho do S3, entao duplicamos a coluna para o parquet ficar
+    # autocontido quando lido arquivo a arquivo.
+    df = df.withColumn("ano_referencia", col("ano"))
 
     # Adiciona timestamp de processamento
     df = df.withColumn(
@@ -83,6 +93,50 @@ def transform(df, df_dicionario):
  
     return df
  
+def apply_dictionary_lookup(df, df_dicionario, coluna, coluna_descricao, id_tabela="uf"):
+    """Traduz uma coluna codificada usando o dicionario da bronze.
+
+    - filtra o dicionario pela tabela/coluna e deduplica as chaves, para que o
+      join nao multiplique registros do fato;
+    - normaliza os dois lados da chave como string aparada, evitando o cast
+      implicito entre a coluna numerica do fato e a chave textual do dicionario;
+    - usa broadcast, porque o dicionario e pequeno o suficiente para caber em
+      memoria e assim evitamos o shuffle;
+    - preserva apenas a coluna descritiva, descartando as colunas auxiliares do
+      dicionario (chave/valor).
+    """
+
+    df_de_para = (
+        df_dicionario
+        .filter(
+            (col("id_tabela") == lit(id_tabela))
+            & (col("nome_coluna") == lit(coluna))
+        )
+        .select(
+            trim(col("chave").cast("string")).alias("_chave"),
+            trim(col("valor").cast("string")).alias(coluna_descricao)
+        )
+        .dropDuplicates(["_chave"])
+    )
+
+    df = (
+        df
+        .withColumn("_chave_fato", trim(col(coluna).cast("string")))
+        .join(
+            broadcast(df_de_para),
+            col("_chave_fato") == col("_chave"),
+            how="left"
+        )
+        .withColumn(
+            coluna_descricao,
+            coalesce(col(coluna_descricao), lit(VALOR_NAO_MAPEADO))
+        )
+        .drop("_chave_fato", "_chave")
+    )
+
+    return df
+
+
 def load(input_path, spark_session):
 
     df = spark_session.read.parquet(input_path)
@@ -107,6 +161,21 @@ def validate(df):
  
     print("\nAnos disponíveis:")
     df.select("ano").distinct().orderBy("ano").show()
+
+    for coluna, coluna_descricao in COLUNAS_DE_PARA.items():
+        print(f"\nDe-para de {coluna}:")
+        (
+            df
+            .select(coluna, coluna_descricao)
+            .distinct()
+            .orderBy(coluna)
+            .show(truncate=False)
+        )
+
+        nao_mapeados = df.filter(
+            col(coluna_descricao) == VALOR_NAO_MAPEADO
+        ).count()
+        print(f"Registros sem de-para em {coluna}: {nao_mapeados}")
  
     print("\nPrimeiros registros:")
     df.show(10, truncate=False)
