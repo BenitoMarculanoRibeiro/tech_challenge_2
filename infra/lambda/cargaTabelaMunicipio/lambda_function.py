@@ -7,11 +7,11 @@ from io import BytesIO
 s3 = boto3.client('s3')
 
 BUCKET = 'tc2-bronze'
-PREFIX = 'municipiosIBGE/'
+PREFIX = 'municipio_ibge/'
 
 url = "https://servicodados.ibge.gov.br/api/v1/localidades/municipios"
 
-key = f"{PREFIX}municipiosIBGE.parquet"
+key = f"{PREFIX}municipios_ibge.parquet"
 
 def lambda_handler(event, context):
     try:
@@ -22,13 +22,15 @@ def lambda_handler(event, context):
 
         print(f"Quantidade de registros retornados: {len(dados)}")
 
-        municipios = pd.DataFrame([
-            {
-                "id_municipio": str(municipio["id"]),
-                "nome_municipio": municipio["nome"]
-            }
-            for municipio in dados
-        ])
+        # O json_normalize navega automaticamente pelas chaves aninhadas usando pontos
+        df_raw = pd.json_normalize(dados)
+
+        # Seleciona e renomeia apenas as colunas necessárias
+        municipios = pd.DataFrame({
+            "id_municipio": df_raw["id"].astype(str),
+            "nome_municipio": df_raw["nome"],
+            "sigla_uf": df_raw["microrregiao.mesorregiao.UF.sigla"]
+        })
 
         parquet_buffer = BytesIO()
         municipios.to_parquet(parquet_buffer)
