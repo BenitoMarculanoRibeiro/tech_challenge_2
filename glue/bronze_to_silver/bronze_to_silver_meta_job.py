@@ -83,27 +83,14 @@ def codigo_rede():
     return expressao
 
 
-def normaliza(df, escopo, coluna_chave=None):
-    """Transforma um bloco de metas da bronze em formato longo.
+def normaliza(df, escopo, coluna_chave):
+    """
+    Transforma um bloco de metas da bronze em formato longo.
 
     Na bronze cada ano de meta e uma coluna (meta_alfabetizacao_2024 ..
     _2030); aqui cada um vira uma linha, o que deixa a tabela no grao natural
     da meta: uma linha por escopo, geografia, revisao e ano de meta.
-
-    `ano_publicacao` e o ano da revisao -- a mesma meta de 2030 aparece em mais
-    de uma revisao, com valores levemente diferentes. Manter as duas datas
-    separadas permite ao consumidor escolher a revisao vigente no ano que ele
-    esta analisando.
-
-    coluna_chave ausente significa escopo nacional, sem recorte geografico.
     """
-
-    if coluna_chave == "sigla_uf":
-        chave = upper(trim(col("sigla_uf")))
-    elif coluna_chave:
-        chave = trim(col(coluna_chave).cast("string"))
-    else:
-        chave = lit(CHAVE_BRASIL)
 
     metas = array(*[
         struct(
@@ -120,7 +107,7 @@ def normaliza(df, escopo, coluna_chave=None):
         .withColumn("_meta", explode(metas))
         .select(
             lit(escopo).alias("escopo"),
-            chave.alias("chave"),
+            coluna_chave.alias("chave"),
             codigo_rede().alias("rede"),
             trim(col("rede").cast("string")).alias("rede_descricao"),
             col("ano").cast("integer").alias("ano_publicacao"),
@@ -138,9 +125,9 @@ def transform(df_meta_uf, df_meta_municipio, df_meta_brasil):
     df = (
         normaliza(df_meta_uf, ESCOPO_UF, "sigla_uf")
         .unionByName(
-            normaliza(df_meta_municipio, ESCOPO_MUNICIPIO, "id_municipio")
+        normaliza(df_meta_municipio, ESCOPO_MUNICIPIO, "id_municipio")
         )
-        .unionByName(normaliza(df_meta_brasil, ESCOPO_BRASIL))
+        .unionByName(normaliza(df_meta_brasil, ESCOPO_BRASIL,"BR"))
     )
 
     df = df.dropDuplicates(CHAVE_NATURAL)

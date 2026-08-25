@@ -25,9 +25,8 @@ from pyspark.sql.functions import (
     broadcast
 )
 
-# Colunas da bronze/alunos que possuem de-para no dicionario:
-# nome da coluna na origem -> nome da coluna descritiva na silver
-COLUNAS_DE_PARA = {
+# Colunas da bronze/alunos que possuem de-para no dicionario.
+COLUNAS_DE_PARA_DICIONARIO = {
     "rede": "rede_descricao",
     "serie": "serie_descricao",
     "presenca": "presenca_descricao",
@@ -62,8 +61,7 @@ def transform(df, df_dicionario, df_municipios_ibge):
     # Remove registros completamente duplicados
     df = df.dropDuplicates()
  
-    # Padroniza os identificadores como texto aparado (nao sao numeros de
-    # calculo e o id_municipio ainda e a chave do join com o IBGE)
+    # Padroniza os identificadores como texto e não são utilizados para nenhum cálculo
     df = (
         df
         .withColumn("id_municipio", trim(col("id_municipio").cast("string")))
@@ -78,33 +76,25 @@ def transform(df, df_dicionario, df_municipios_ibge):
         .withColumn("serie", col("serie").cast("integer"))
         .withColumn("rede", col("rede").cast("integer"))
         .withColumn("presenca", col("presenca").cast("integer"))
-        .withColumn(
-            "preenchimento_caderno",
-            col("preenchimento_caderno").cast("integer")
-        )
+        .withColumn("preenchimento_caderno",col("preenchimento_caderno").cast("integer"))
         .withColumn("alfabetizado", col("alfabetizado").cast("integer"))
-        .withColumn(
-            "proficiencia",
-            col("proficiencia").cast("double")
-        )
-        .withColumn(
-            "peso_aluno",
-            col("peso_aluno").cast("double")
-        )
+        .withColumn("proficiencia",col("proficiencia").cast("double"))
+        .withColumn("peso_aluno", col("peso_aluno").cast("double"))
     )
 
-    # Enriquece com o nome do municipio e a UF vindos do IBGE
+    # Adiciona o nome da cidade e sigla da uf com base no df de municipios do IBGE
     df = join_municipios_ibge(df, df_municipios_ibge)
 
-    # Padroniza a sigla da UF (que vem do IBGE)
+    # Padroniza a sigla da UF para maiscula
     df = df.withColumn(
         "sigla_uf",
         upper(trim(col("sigla_uf")))
     )
 
     # Fazer o de para com o df dicionario
-    for coluna, coluna_descricao in COLUNAS_DE_PARA.items():
-        df = apply_dictionary_lookup(df, df_dicionario, coluna, coluna_descricao)
+    for coluna, coluna_descricao in COLUNAS_DE_PARA_DICIONARIO.items():
+        df = apply_dictionary_lookup(df, df_dicionario, 
+                                     coluna, coluna_descricao)
 
     # Mantem o ano dentro dos arquivos: o partitionBy grava o valor apenas no
     # caminho do S3, entao duplicamos a coluna para o parquet ficar
@@ -120,15 +110,7 @@ def transform(df, df_dicionario, df_municipios_ibge):
     return df
  
 def join_municipios_ibge(df, df_municipios_ibge):
-    """Traz nome_municipio e sigla_uf do IBGE para o fato, via id_municipio.
-
-    - deduplica o lado do IBGE pela chave, para que o join nao multiplique
-      registros do fato;
-    - normaliza a chave como string aparada nos dois lados, evitando perda de
-      match por espaco ou por diferenca de tipo;
-    - usa broadcast, porque sao ~5,6 mil municipios e assim evitamos o shuffle;
-    - left join para nunca descartar registro do fato sem correspondencia.
-    """
+    #Traz nome_municipio e sigla_uf do IBGE para o fato, via id_municipio.
 
     df_ibge = (
         df_municipios_ibge
@@ -150,17 +132,6 @@ def join_municipios_ibge(df, df_municipios_ibge):
 
 
 def apply_dictionary_lookup(df, df_dicionario, coluna, coluna_descricao, id_tabela="alunos"):
-    """Traduz uma coluna codificada usando o dicionario da bronze.
-
-    - filtra o dicionario pela tabela/coluna e deduplica as chaves, para que o
-      join nao multiplique registros do fato;
-    - normaliza os dois lados da chave como string aparada, evitando o cast
-      implicito entre a coluna numerica do fato e a chave textual do dicionario;
-    - usa broadcast, porque o dicionario e pequeno o suficiente para caber em
-      memoria e assim evitamos o shuffle;
-    - preserva apenas a coluna descritiva, descartando as colunas auxiliares do
-      dicionario (chave/valor).
-    """
 
     df_de_para = (
         df_dicionario
@@ -227,27 +198,8 @@ def validate(df):
     print("\nAnos disponíveis:")
     df.select("ano").distinct().orderBy("ano").show()
 
-    for coluna, coluna_descricao in COLUNAS_DE_PARA.items():
-        print(f"\nDe-para de {coluna}:")
-        (
-            df
-            .select(coluna, coluna_descricao)
-            .distinct()
-            .orderBy(coluna)
-            .show(truncate=False)
-        )
-
-        nao_mapeados = df.filter(
-            col(coluna_descricao) == VALOR_NAO_MAPEADO
-        ).count()
-        print(f"Registros sem de-para em {coluna}: {nao_mapeados}")
- 
-    print("\nPrimeiros registros:")
-    df.show(10, truncate=False)
- 
- 
 def main():
- 
+
     args = getResolvedOptions(sys.argv, ['JOB_NAME'])
 
     sc = SparkContext()
