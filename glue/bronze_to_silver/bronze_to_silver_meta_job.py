@@ -92,6 +92,13 @@ def normaliza(df, escopo, coluna_chave):
     da meta: uma linha por escopo, geografia, revisao e ano de meta.
     """
 
+    if coluna_chave == "sigla_uf":
+        chave = upper(trim(col("sigla_uf")))
+    elif coluna_chave:
+        chave = trim(col(coluna_chave).cast("string"))
+    else:
+        chave = lit(coluna_chave)
+
     metas = array(*[
         struct(
             lit(ano).alias("ano_meta"),
@@ -107,7 +114,7 @@ def normaliza(df, escopo, coluna_chave):
         .withColumn("_meta", explode(metas))
         .select(
             lit(escopo).alias("escopo"),
-            coluna_chave.alias("chave"),
+            chave.alias("chave"),
             codigo_rede().alias("rede"),
             trim(col("rede").cast("string")).alias("rede_descricao"),
             col("ano").cast("integer").alias("ano_publicacao"),
