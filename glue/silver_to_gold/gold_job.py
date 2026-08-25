@@ -210,7 +210,6 @@ def load(input_path, spark_session):
 
 
 def valida_schema(nome, df, colunas_obrigatorias):
-    """Falha cedo, e com mensagem util, se a silver estiver defasada."""
 
     faltando = [
         coluna for coluna in colunas_obrigatorias
@@ -240,13 +239,6 @@ def finaliza(df, nivel):
 
 
 def agrega_alunos(df_alunos):
-    """Agrega o microdado uma unica vez, no grao mais fino.
-
-    Devolve uma linha por (sigla_uf, id_municipio, ano, serie, rede individual)
-    com os componentes aditivos da taxa, nao a taxa. Guardar as somas e o que
-    permite consolidar para UF e Brasil somando, sem reler os ~3,9M de linhas
-    uma vez por nivel.
-    """
 
     return (
         df_alunos
@@ -259,13 +251,9 @@ def agrega_alunos(df_alunos):
             "rede"
         )
         .agg(
-            spark_sum(col("alfabetizado") * col("peso_aluno"))
-            .alias("soma_ponderada"),
-            spark_sum(
-                when(col("alfabetizado").isNotNull(), col("peso_aluno"))
-            ).alias("soma_pesos"),
-            spark_sum(col("alfabetizado").cast("double"))
-            .alias("soma_alfabetizados"),
+            spark_sum(col("alfabetizado") * col("peso_aluno")).alias("soma_ponderada"),
+            spark_sum(when(col("alfabetizado").isNotNull(), col("peso_aluno"))).alias("soma_pesos"),
+            spark_sum(col("alfabetizado").cast("double")).alias("soma_alfabetizados"),
             count(col("alfabetizado")).alias("qtd_alunos")
         )
     )
@@ -953,7 +941,7 @@ def main():
     valida_schema("ALUNOS", df_alunos, COLUNAS_OBRIGATORIAS_ALUNOS)
     valida_schema("META", df_meta, COLUNAS_OBRIGATORIAS_META)
 
-    # Pequena e usada em todos os niveis: vale materializar.
+    # Pequena e usada em todos os niveis, então faz sentido materalizar no processo
     df_meta = df_meta.cache()
 
     # Uma unica passada pelo microdado alimenta a contagem de alunos dos tres
