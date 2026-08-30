@@ -39,9 +39,10 @@ def get_data_to_bigdata(table_id, key):
     )
     query = f"SELECT * FROM basedosdados.br_inep_avaliacao_alfabetizacao.{table_id}"
    
-    # Otimização: usa a Storage API do Google Cloud se instalada (mais rápida)
+    # Usa a API REST para evitar incluir a pesada dependência BigQuery Storage.
+    # Pandas, PyArrow e NumPy são fornecidos pela layer gerenciada AWSSDKPandas.
     query_job = client.query(query)
-    df = query_job.to_dataframe(create_bqstorage_client=True)
+    df = query_job.to_dataframe(create_bqstorage_client=False)
  
     parquet_buffer = BytesIO()
     df.to_parquet(parquet_buffer, engine="pyarrow", compression="snappy")
@@ -87,9 +88,4 @@ def lambda_handler(event, context):
        
     except Exception as e:
         print(f"Erro: {str(e)}")
-        return {
-            'statusCode': 500,
-            'body': json.dumps({
-                'error': str(e)
-            })
-        }
+        raise

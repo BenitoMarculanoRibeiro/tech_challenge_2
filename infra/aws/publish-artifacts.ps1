@@ -111,6 +111,23 @@ if ($LASTEXITCODE -ne 0) {
     throw "Falha ao instalar as dependencias da layer (codigo $LASTEXITCODE)."
 }
 
+# A aplicacao tambem usa a layer gerenciada AWSSDKPandas, que ja fornece estas
+# bibliotecas. db-dtypes as declara como dependencias e o pip as instala no
+# destino; removemos as copias para respeitar o limite combinado das layers.
+$managedLayerPackages = @(
+    'numpy',
+    'numpy.libs',
+    'numpy-*.dist-info',
+    'pandas',
+    'pandas-*.dist-info',
+    'pyarrow',
+    'pyarrow-*.dist-info'
+)
+foreach ($packagePattern in $managedLayerPackages) {
+    Get-ChildItem -LiteralPath $layerPythonDirectory -Force -Filter $packagePattern |
+        Remove-Item -Recurse -Force
+}
+
 Get-ChildItem -LiteralPath $layerPythonDirectory -Directory -Recurse -Filter '__pycache__' |
     Remove-Item -Recurse -Force
 Get-ChildItem -LiteralPath $layerPythonDirectory -File -Recurse -Include '*.pyc', '*.pyo' |
