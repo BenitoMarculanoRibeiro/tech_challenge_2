@@ -1,0 +1,4 @@
+# Dependências da layer própria usada pela Lambda de carga BigQuery.
+google-cloud-bigquery==3.43.0
+google-auth==2.56.3
+db-dtypes

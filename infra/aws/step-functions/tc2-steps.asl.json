@@ -1,0 +1,55 @@
+{
+  "Comment": "Pipeline batch Bronze, Silver e Gold do Tech Challenge.",
+  "StartAt": "IngestaoBatch",
+  "States": {
+    "IngestaoBatch": {
+      "Type": "Parallel",
+      "Branches": [
+        {
+          "StartAt": "CargaBigQuery",
+          "States": {
+            "CargaBigQuery": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Parameters": {"FunctionName": "${CargaFunctionArn}", "Payload": {}},
+              "Retry": [{"ErrorEquals": ["Lambda.ServiceException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 2, "MaxAttempts": 3, "BackoffRate": 2}],
+              "TimeoutSeconds": 900,
+              "End": true
+            }
+          }
+        },
+        {
+          "StartAt": "CargaMunicipiosIBGE",
+          "States": {
+            "CargaMunicipiosIBGE": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Parameters": {"FunctionName": "${CargaMunicipiosFunctionArn}", "Payload": {}},
+              "Retry": [{"ErrorEquals": ["Lambda.ServiceException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 2, "MaxAttempts": 3, "BackoffRate": 2}],
+              "TimeoutSeconds": 60,
+              "End": true
+            }
+          }
+        }
+      ],
+      "Next": "TransformacaoSilver"
+    },
+    "TransformacaoSilver": {
+      "Type": "Parallel",
+      "Branches": [
+        {"StartAt": "SilverUF", "States": {"SilverUF": {"Type": "Task", "Resource": "arn:aws:states:::glue:startJobRun.sync", "Parameters": {"JobName": "${SilverUfJobName}"}, "Retry": [{"ErrorEquals": ["Glue.ConcurrentRunsExceededException", "Glue.InternalServiceException", "Glue.OperationTimeoutException"], "IntervalSeconds": 5, "MaxAttempts": 3, "BackoffRate": 2}], "End": true}}},
+        {"StartAt": "SilverMunicipio", "States": {"SilverMunicipio": {"Type": "Task", "Resource": "arn:aws:states:::glue:startJobRun.sync", "Parameters": {"JobName": "${SilverMunicipioJobName}"}, "Retry": [{"ErrorEquals": ["Glue.ConcurrentRunsExceededException", "Glue.InternalServiceException", "Glue.OperationTimeoutException"], "IntervalSeconds": 5, "MaxAttempts": 3, "BackoffRate": 2}], "End": true}}},
+        {"StartAt": "SilverAluno", "States": {"SilverAluno": {"Type": "Task", "Resource": "arn:aws:states:::glue:startJobRun.sync", "Parameters": {"JobName": "${SilverAlunoJobName}"}, "Retry": [{"ErrorEquals": ["Glue.ConcurrentRunsExceededException", "Glue.InternalServiceException", "Glue.OperationTimeoutException"], "IntervalSeconds": 5, "MaxAttempts": 3, "BackoffRate": 2}], "End": true}}},
+        {"StartAt": "SilverMeta", "States": {"SilverMeta": {"Type": "Task", "Resource": "arn:aws:states:::glue:startJobRun.sync", "Parameters": {"JobName": "${SilverMetaJobName}"}, "Retry": [{"ErrorEquals": ["Glue.ConcurrentRunsExceededException", "Glue.InternalServiceException", "Glue.OperationTimeoutException"], "IntervalSeconds": 5, "MaxAttempts": 3, "BackoffRate": 2}], "End": true}}}
+      ],
+      "Next": "Gold"
+    },
+    "Gold": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::glue:startJobRun.sync",
+      "Parameters": {"JobName": "${GoldJobName}"},
+      "Retry": [{"ErrorEquals": ["Glue.ConcurrentRunsExceededException", "Glue.InternalServiceException", "Glue.OperationTimeoutException"], "IntervalSeconds": 5, "MaxAttempts": 3, "BackoffRate": 2}],
+      "End": true
+    }
+  }
+}

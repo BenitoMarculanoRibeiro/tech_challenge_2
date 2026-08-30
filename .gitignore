@@ -203,6 +203,22 @@ cython_debug/
 # Temporary file for partial code execution
 tempCodeRunnerFile.py
 
+# Local configuration, credentials and generated AWS artifacts
+.build/
+*.local.json
+*.local.yaml
+*.local.yml
+credentials.json
+google.json
+service-account*.json
+*.pem
+*.key
+*.zip
+!Fontes_Complementares/**/*.zip
+infra/aws/parameters.local.json
+.DS_Store
+Thumbs.db
+
 # Ruff stuff:
 .ruff_cache/
 
