@@ -17,25 +17,18 @@ from pyspark.sql.functions import (
     explode
 )
 
-INPUT_META_UF = (
-    "s3://tc2-bronze/"
-    "meta_alfabetizacao_uf/"
-)
+def configure_paths(args):
+    """Configura os caminhos sem vincular o job a buckets físicos."""
+    global INPUT_META_UF, INPUT_META_MUNICIPIO, INPUT_META_BRASIL
+    global OUTPUT_PATH_SILVER
 
-INPUT_META_MUNICIPIO = (
-    "s3://tc2-bronze/"
-    "meta_alfabetizacao_municipio/"
-)
+    bronze = args["BRONZE_BUCKET"]
+    silver = args["SILVER_BUCKET"]
+    INPUT_META_UF = f"s3://{bronze}/meta_alfabetizacao_uf/"
+    INPUT_META_MUNICIPIO = f"s3://{bronze}/meta_alfabetizacao_municipio/"
+    INPUT_META_BRASIL = f"s3://{bronze}/meta_alfabetizacao_brasil/"
+    OUTPUT_PATH_SILVER = f"s3://{silver}/meta_alfabetizacao/"
 
-INPUT_META_BRASIL = (
-    "s3://tc2-bronze/"
-    "meta_alfabetizacao_brasil/"
-)
-
-OUTPUT_PATH_SILVER = (
-    "s3://tc2-silver/"
-    "meta_alfabetizacao/"
-)
 
 ESCOPO_UF = "uf"
 ESCOPO_MUNICIPIO = "municipio"
@@ -83,13 +76,19 @@ def codigo_rede():
     return expressao
 
 
-def normaliza(df, escopo, coluna_chave):
-    """
-    Transforma um bloco de metas da bronze em formato longo.
+def normaliza(df, escopo, coluna_chave=None):
+    """Transforma um bloco de metas da bronze em formato longo.
 
     Na bronze cada ano de meta e uma coluna (meta_alfabetizacao_2024 ..
     _2030); aqui cada um vira uma linha, o que deixa a tabela no grao natural
     da meta: uma linha por escopo, geografia, revisao e ano de meta.
+
+    `ano_publicacao` e o ano da revisao -- a mesma meta de 2030 aparece em mais
+    de uma revisao, com valores levemente diferentes. Manter as duas datas
+    separadas permite ao consumidor escolher a revisao vigente no ano que ele
+    esta analisando.
+
+    coluna_chave ausente significa escopo nacional, sem recorte geografico.
     """
 
     if coluna_chave == "sigla_uf":
@@ -97,7 +96,7 @@ def normaliza(df, escopo, coluna_chave):
     elif coluna_chave:
         chave = trim(col(coluna_chave).cast("string"))
     else:
-        chave = lit(coluna_chave)
+        chave = lit(CHAVE_BRASIL)
 
     metas = array(*[
         struct(
@@ -132,9 +131,9 @@ def transform(df_meta_uf, df_meta_municipio, df_meta_brasil):
     df = (
         normaliza(df_meta_uf, ESCOPO_UF, "sigla_uf")
         .unionByName(
-        normaliza(df_meta_municipio, ESCOPO_MUNICIPIO, "id_municipio")
+            normaliza(df_meta_municipio, ESCOPO_MUNICIPIO, "id_municipio")
         )
-        .unionByName(normaliza(df_meta_brasil, ESCOPO_BRASIL,"BR"))
+        .unionByName(normaliza(df_meta_brasil, ESCOPO_BRASIL))
     )
 
     df = df.dropDuplicates(CHAVE_NATURAL)
@@ -196,7 +195,10 @@ def validate(df):
 
 def main():
 
-    args = getResolvedOptions(sys.argv, ['JOB_NAME'])
+    args = getResolvedOptions(
+        sys.argv, ['JOB_NAME', 'BRONZE_BUCKET', 'SILVER_BUCKET']
+    )
+    configure_paths(args)
 
     sc = SparkContext()
     glueContext = GlueContext(sc)

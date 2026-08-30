@@ -25,77 +25,33 @@ from pyspark.sql.functions import (
 
 from pyspark.sql.window import Window
 
-INPUT_SILVER_UF = (
-    "s3://tc2-silver/"
-    "uf/"
-)
+def configure_paths(args):
+    """Configura entradas e saídas sem depender dos nomes físicos dos buckets."""
+    global INPUT_SILVER_UF, INPUT_SILVER_MUNICIPIO
+    global INPUT_SILVER_ALUNOS, INPUT_SILVER_META
+    global OUTPUT_GOLD_INDICADOR_MUNICIPIO, OUTPUT_GOLD_INDICADOR_UF
+    global OUTPUT_GOLD_INDICADOR_BRASIL, OUTPUT_GOLD_METAS_MUNICIPIO
+    global OUTPUT_GOLD_METAS_UF, OUTPUT_GOLD_METAS_BRASIL
+    global OUTPUT_GOLD_EVOLUCAO_MUNICIPIO, OUTPUT_GOLD_EVOLUCAO_UF
+    global OUTPUT_GOLD_EVOLUCAO_BRASIL, OUTPUT_GOLD_ML_ALUNO
 
-INPUT_SILVER_MUNICIPIO = (
-    "s3://tc2-silver/"
-    "municipio/"
-)
+    silver = args["SILVER_BUCKET"]
+    gold = args["GOLD_BUCKET"]
+    INPUT_SILVER_UF = f"s3://{silver}/uf/"
+    INPUT_SILVER_MUNICIPIO = f"s3://{silver}/municipio/"
+    INPUT_SILVER_ALUNOS = f"s3://{silver}/alunos/"
+    INPUT_SILVER_META = f"s3://{silver}/meta_alfabetizacao/"
+    OUTPUT_GOLD_INDICADOR_MUNICIPIO = f"s3://{gold}/indicador_municipio/"
+    OUTPUT_GOLD_INDICADOR_UF = f"s3://{gold}/indicador_uf/"
+    OUTPUT_GOLD_INDICADOR_BRASIL = f"s3://{gold}/indicador_brasil/"
+    OUTPUT_GOLD_METAS_MUNICIPIO = f"s3://{gold}/metas_vs_resultado_municipio/"
+    OUTPUT_GOLD_METAS_UF = f"s3://{gold}/metas_vs_resultado_uf/"
+    OUTPUT_GOLD_METAS_BRASIL = f"s3://{gold}/metas_vs_resultado_brasil/"
+    OUTPUT_GOLD_EVOLUCAO_MUNICIPIO = f"s3://{gold}/evolucao_temporal_municipio/"
+    OUTPUT_GOLD_EVOLUCAO_UF = f"s3://{gold}/evolucao_temporal_uf/"
+    OUTPUT_GOLD_EVOLUCAO_BRASIL = f"s3://{gold}/evolucao_temporal_brasil/"
+    OUTPUT_GOLD_ML_ALUNO = f"s3://{gold}/ml_aluno/"
 
-INPUT_SILVER_ALUNOS = (
-    "s3://tc2-silver/"
-    "alunos/"
-)
-
-INPUT_SILVER_META = (
-    "s3://tc2-silver/"
-    "meta_alfabetizacao/"
-)
-
-# Cada nivel geografico tem sua propria pasta, com as colunas nativas do nivel:
-# nada de chave generica nem de coluna nula para alinhar schema entre niveis.
-OUTPUT_GOLD_INDICADOR_MUNICIPIO = (
-    "s3://tc2-gold/"
-    "indicador_municipio/"
-)
-
-OUTPUT_GOLD_INDICADOR_UF = (
-    "s3://tc2-gold/"
-    "indicador_uf/"
-)
-
-OUTPUT_GOLD_INDICADOR_BRASIL = (
-    "s3://tc2-gold/"
-    "indicador_brasil/"
-)
-
-OUTPUT_GOLD_METAS_MUNICIPIO = (
-    "s3://tc2-gold/"
-    "metas_vs_resultado_municipio/"
-)
-
-OUTPUT_GOLD_METAS_UF = (
-    "s3://tc2-gold/"
-    "metas_vs_resultado_uf/"
-)
-
-OUTPUT_GOLD_METAS_BRASIL = (
-    "s3://tc2-gold/"
-    "metas_vs_resultado_brasil/"
-)
-
-OUTPUT_GOLD_EVOLUCAO_MUNICIPIO = (
-    "s3://tc2-gold/"
-    "evolucao_temporal_municipio/"
-)
-
-OUTPUT_GOLD_EVOLUCAO_UF = (
-    "s3://tc2-gold/"
-    "evolucao_temporal_uf/"
-)
-
-OUTPUT_GOLD_EVOLUCAO_BRASIL = (
-    "s3://tc2-gold/"
-    "evolucao_temporal_brasil/"
-)
-
-OUTPUT_GOLD_ML_ALUNO = (
-    "s3://tc2-gold/"
-    "ml_aluno/"
-)
 
 NIVEL_MUNICIPIO = "municipio"
 NIVEL_UF = "uf"
@@ -210,6 +166,7 @@ def load(input_path, spark_session):
 
 
 def valida_schema(nome, df, colunas_obrigatorias):
+    """Falha cedo, e com mensagem util, se a silver estiver defasada."""
 
     faltando = [
         coluna for coluna in colunas_obrigatorias
@@ -239,6 +196,13 @@ def finaliza(df, nivel):
 
 
 def agrega_alunos(df_alunos):
+    """Agrega o microdado uma unica vez, no grao mais fino.
+
+    Devolve uma linha por (sigla_uf, id_municipio, ano, serie, rede individual)
+    com os componentes aditivos da taxa, nao a taxa. Guardar as somas e o que
+    permite consolidar para UF e Brasil somando, sem reler os ~3,9M de linhas
+    uma vez por nivel.
+    """
 
     return (
         df_alunos
@@ -251,9 +215,13 @@ def agrega_alunos(df_alunos):
             "rede"
         )
         .agg(
-            spark_sum(col("alfabetizado") * col("peso_aluno")).alias("soma_ponderada"),
-            spark_sum(when(col("alfabetizado").isNotNull(), col("peso_aluno"))).alias("soma_pesos"),
-            spark_sum(col("alfabetizado").cast("double")).alias("soma_alfabetizados"),
+            spark_sum(col("alfabetizado") * col("peso_aluno"))
+            .alias("soma_ponderada"),
+            spark_sum(
+                when(col("alfabetizado").isNotNull(), col("peso_aluno"))
+            ).alias("soma_pesos"),
+            spark_sum(col("alfabetizado").cast("double"))
+            .alias("soma_alfabetizados"),
             count(col("alfabetizado")).alias("qtd_alunos")
         )
     )
@@ -919,7 +887,10 @@ def processa_nivel(
 
 def main():
 
-    args = getResolvedOptions(sys.argv, ['JOB_NAME'])
+    args = getResolvedOptions(
+        sys.argv, ['JOB_NAME', 'SILVER_BUCKET', 'GOLD_BUCKET']
+    )
+    configure_paths(args)
 
     sc = SparkContext()
     glueContext = GlueContext(sc)
@@ -941,7 +912,7 @@ def main():
     valida_schema("ALUNOS", df_alunos, COLUNAS_OBRIGATORIAS_ALUNOS)
     valida_schema("META", df_meta, COLUNAS_OBRIGATORIAS_META)
 
-    # Pequena e usada em todos os niveis, então faz sentido materalizar no processo
+    # Pequena e usada em todos os niveis: vale materializar.
     df_meta = df_meta.cache()
 
     # Uma unica passada pelo microdado alimenta a contagem de alunos dos tres

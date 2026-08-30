@@ -1,12 +1,13 @@
 import requests
 import pandas as pd
 import json
+import os
 import boto3
 from io import BytesIO
 
 s3 = boto3.client('s3')
 
-BUCKET = 'tc2-bronze'
+BUCKET = os.environ["BRONZE_BUCKET"]
 PREFIX = 'municipio_ibge/'
 
 url = "https://servicodados.ibge.gov.br/api/v1/localidades/municipios"

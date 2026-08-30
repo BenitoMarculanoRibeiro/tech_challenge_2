@@ -1,0 +1,63 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  Bucket de artefatos do Tech Challenge - separa bootstrap e aplicação para
+  permitir empacotamento reproduzível sem armazenar ZIPs no Git.
+
+Metadata:
+  AWSToolsMetrics:
+    AWSAgentToolkit: aws-cloudformation@2
+  com.aws.cloudformation.Context:
+    arch: bootstrap -> artifact bucket -> application stack
+    must:
+      - nenhum segredo ou dado analítico neste bucket
+    ref:
+      - at: ../../../docs/aws/CLOUDFORMATION.md
+        has: decisões de implantação e Learner Lab
+        scope: repository
+
+Resources:
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: armazena somente pacotes Lambda, layer, ASL e scripts Glue gerados
+        must:
+          - acesso público bloqueado
+          - objetos acessíveis apenas por HTTPS
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+
+  ArtifactBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ArtifactBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource:
+              - !GetAtt ArtifactBucket.Arn
+              - !Sub '${ArtifactBucket.Arn}/*'
+            Condition:
+              Bool:
+                aws:SecureTransport: 'false'
+
+Outputs:
+  ArtifactBucketName:
+    Description: Bucket para os artefatos gerados pelo build local.
+    Value: !Ref ArtifactBucket

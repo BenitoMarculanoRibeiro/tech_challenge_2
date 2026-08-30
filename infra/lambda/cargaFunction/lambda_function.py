@@ -1,22 +1,42 @@
 import json
+import os
 import boto3
 from io import BytesIO
-import os
 import pandas as pd
 from google.cloud import bigquery
- 
+from google.oauth2 import service_account
  
 s3 = boto3.client('s3')
  
-BUCKET = "tc2-bronze"
- 
-# Caminho correto do arquivo de credenciais
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "/var/task/google.json"
+BUCKET = os.environ["BRONZE_BUCKET"]
  
 tables = ["municipio", "dicionario", "meta_alfabetizacao_brasil", "meta_alfabetizacao_municipio", "meta_alfabetizacao_uf", "alunos", "uf"]
  
+def get_google_credentials():
+    ssm = boto3.client("ssm")
+
+    response = ssm.get_parameter(
+        Name=os.environ["GOOGLE_CREDENTIALS_PARAMETER"],
+        WithDecryption=True
+    )
+
+    google_credentials_json = json.loads(
+        response["Parameter"]["Value"]
+    )
+
+    credentials = service_account.Credentials.from_service_account_info(
+        google_credentials_json
+    )
+
+    return credentials
+
 def get_data_to_bigdata(table_id, key):
-    client = bigquery.Client()
+    credentials = get_google_credentials()
+
+    client = bigquery.Client(
+        credentials=credentials,
+        project=credentials.project_id
+    )
     query = f"SELECT * FROM basedosdados.br_inep_avaliacao_alfabetizacao.{table_id}"
    
     # Otimização: usa a Storage API do Google Cloud se instalada (mais rápida)
