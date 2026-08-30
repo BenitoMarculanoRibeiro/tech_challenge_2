@@ -70,6 +70,6 @@ fornecida.
 
 - `glue/`: scripts organizados por etapa.
 - `infra/lambda/`: fonte única das Lambdas.
-- `infra/aws/`: CloudFormation, ASL, configuração e automação.
+- `infra/aws/`: CloudFormation, ASL, configuração e publicação de artefatos.
 - `notebook/`: exploração e leitura das camadas.
 - `Fontes_Complementares/`: arquivos acadêmicos mantidos fora do pipeline AWS.

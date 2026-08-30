@@ -31,10 +31,10 @@ código-fonte ou nos artefatos da aplicação.
 
 Credenciais reais não devem ser versionadas no repositório.
 
-O diretório `docs/reproducao/examples` contém apenas um arquivo de exemplo com
+O diretório `docs/reproducao/exemplos` contém apenas um arquivo de exemplo com
 a estrutura esperada da credencial, sem dados reais.
 
 Consulte também:
 
 - [Guia de configuração](../reproducao/README.md)
-- [Exemplo de credencial](../reproducao/examples/google-bigquery-credentials.example.json)
+- [Exemplo de credencial](../reproducao/exemplos/google-bigquery-credentials.example.json)

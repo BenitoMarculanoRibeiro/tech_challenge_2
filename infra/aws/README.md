@@ -1,6 +1,7 @@
 # Infraestrutura AWS
 
 - `templates/bootstrap.yaml`: bucket de artefatos.
+- `publish-artifacts.ps1`: empacotamento e publicação dos artefatos.
 - `templates/application.yaml`: aplicação.
 - `step-functions/`: definição ASL.
 - `config/`: parâmetros seguros de exemplo.

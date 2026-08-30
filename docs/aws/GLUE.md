@@ -37,5 +37,5 @@ utilizados em diferentes implantações da infraestrutura.
 A sequência de execução e o paralelismo entre os jobs estão documentados em
 `../ARQUITETURA.md`.
 
-As decisões de dimensionamento e otimização dos jobs estão documentadas em
-`otimizacao/glue_resumo.md`.
+As decisões de dimensionamento e otimização dos jobs estão registradas neste
+documento e no template `infra/aws/templates/application.yaml`.

@@ -17,8 +17,8 @@ no código-fonte.
 | `BudgetLimitUsd` | limite mensal do Budget | quando habilitado | não | padrão `10` |
 | `BudgetAlertThresholdUsd` | gasto real que dispara alerta | quando habilitado | não | padrão `8`; deve ser menor ou igual ao limite |
 | `BudgetNotificationEmail` | destinatário opcional do alerta | não | sim | informar no deployment; nunca versionar endereço real |
-| `ArtifactBucketName` | pacotes gerados pelo build | automático | não | Output do bootstrap |
-| `ArtifactPrefix` | versão por hash | automático | não | calculado por `deploy.ps1` |
+| `ArtifactBucketName` | pacotes gerados localmente | sim | não | Output `ArtifactBucketName` do bootstrap |
+| `ArtifactPrefix` | versão dos artefatos por hash | sim | não | exibido por `publish-artifacts.ps1` |
 | `BRONZE_BUCKET` | destino de ingestão | automático | não | `Ref` CloudFormation |
 | `SILVER_BUCKET` | dados normalizados | automático | não | `Ref` CloudFormation |
 | `GOLD_BUCKET` | dados analíticos | automático | não | `Ref` CloudFormation |

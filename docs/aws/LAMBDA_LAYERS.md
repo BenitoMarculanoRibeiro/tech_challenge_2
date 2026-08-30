@@ -15,11 +15,12 @@ Google BigQuery, incluindo:
 
 A layer própria é gerada a partir de `infra/lambda/requirements.txt`.
 
-O script `build.ps1` monta os artefatos utilizados pela infraestrutura. Para a
-layer Google, ele instala wheels Linux x86_64 compatíveis com Python 3.12 em uma
-estrutura `python/` e gera o arquivo `google-dependencies.zip`.
+O script `infra/aws/publish-artifacts.ps1` monta os artefatos utilizados pela
+infraestrutura. Para a layer Google, ele instala wheels Linux x86_64 compatíveis
+com Python 3.12 em uma estrutura `python/` e gera o arquivo
+`google-dependencies.zip`.
 
-O mesmo processo de build também:
+O mesmo processo também:
 
 - gera os pacotes ZIP das três Lambdas;
 - copia os scripts AWS Glue;

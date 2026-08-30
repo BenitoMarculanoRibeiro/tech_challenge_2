@@ -26,5 +26,7 @@ de ambiente, evitando nomes de buckets fixos no código.
 Os templates não armazenam credenciais, valores de `SecureString`, IDs de conta
 específicos da implantação ou dados analíticos.
 
-Os scripts PowerShell de reprodução exibem o plano de execução por padrão.
-Chamadas que alteram recursos na AWS exigem a opção `-Execute`.
+O `publish-artifacts.ps1` gera os pacotes e exibe o plano de publicação por
+padrão. Somente a opção `-Execute` envia arquivos ao bucket. O script não cria
+nem atualiza stacks: tanto o bootstrap quanto a aplicação são implantados
+manualmente pelo console do CloudFormation.

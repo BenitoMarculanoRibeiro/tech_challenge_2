@@ -141,10 +141,10 @@ final adequada para análise.
 - Artefatos derivados — ZIPs, layers e cópias destinadas ao S3 — gerados em
   `.build/`, mantendo-os separados do código-fonte.
 
-## Escopo confirmado pelo backup
+## Escopo da entrega
 
-A reconstrução foi baseada nos recursos funcionais identificados no backup do
-ambiente original. Foram confirmados:
+A entrega reproduz os recursos funcionais utilizados pelo grupo no ambiente do
+Learner Lab:
 
 - **3 Lambdas** da aplicação;
 - **5 AWS Glue Jobs 5.1**;
@@ -154,6 +154,5 @@ ambiente original. Foram confirmados:
 - **1 API HTTP**;
 - **1 regra EventBridge**.
 
-A stack CloudFormation encontrada no ambiente original pertence à
-infraestrutura administrativa do **AWS Academy Learner Lab** e, portanto,
-não integra a arquitetura da aplicação nem deve ser reproduzida.
+Recursos administrativos do **AWS Academy Learner Lab** não integram a
+arquitetura da aplicação e não devem ser reproduzidos pelo projeto.
