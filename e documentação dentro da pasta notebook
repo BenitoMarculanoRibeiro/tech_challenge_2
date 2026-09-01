@@ -1,0 +1,123 @@
+[33mcommit db6346f02463cb0043aa44656fdbccfb5382d920[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32m20260813-DataAnalysis[m[33m, [m[1;31morigin/20260813-DataAnalysis[m[33m)[m
+Author: Sonia Andreia <sandreiaribeiro@gmail.com>
+Date:   Sat Aug 29 22:48:10 2026 -0300
+
+    Atualização e inclusão de arquivos na pasta notebook
+
+notebook/Analise_bases.ipynb
+notebook/documentacao.md
+notebook/readme.md
+
+[33mcommit e1752f67089c57ec82a5962f8dac367427e23b57[m
+Author: Sonia Andreia <sandreiaribeiro@gmail.com>
+Date:   Fri Aug 21 02:50:22 2026 -0300
+
+    Upload de dados complementares (Censo e INSE 2023) e notebooks de análise atualizados
+
+notebook/Analise_bases.ipynb
+"notebook/Relacionamento_e_An\303\241lise_das_Bases.ipynb"
+
+[33mcommit 941501a76f2cbfa1105dc410937fe20ef9c3de05[m
+Author: Sonia Andreia <sandreiaribeiro@gmail.com>
+Date:   Fri Aug 21 02:29:33 2026 -0300
+
+    Adiciona pasta Fontes_Complementares com dados do Censo e INSE 2023
+
+"Fontes_Complementares/Censo Escolar/dicion\303\241rio_dados_educa\303\247\303\243o_b\303\241sica.xlsx"
+Fontes_Complementares/Censo Escolar/microdados_ed_basica_2023.zip
+Fontes_Complementares/INSE/INSE_2023_brasil.xlsx
+Fontes_Complementares/INSE/INSE_2023_escolas.xlsx
+Fontes_Complementares/INSE/INSE_2023_estados.xlsx
+Fontes_Complementares/INSE/INSE_2023_municipios.xlsx
+
+[33mcommit 65a36853fdddc4238f49f563eabb344c7b847d6a[m
+Author: Sonia Andreia <sandreiaribeiro@gmail.com>
+Date:   Mon Aug 17 00:15:58 2026 -0300
+
+    Move Colab para a pasta notebook
+
+notebook/Analise_bases.ipynb
+
+[33mcommit 2952b50f023c09633e946b472a1d6e4429897c9e[m
+Author: Sonia Andreia <sandreiaribeiro@gmail.com>
+Date:   Thu Aug 13 21:08:57 2026 -0300
+
+    Criado usando o Colab
+
+infra/lambda/Analise_bases.ipynb
+
+[33mcommit 7d5b4fb9ee9c0900289a38eca17eb5b622057e19[m[33m ([m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m
+Merge: cdabb4b 3256352
+Author: Gabriel Butti <101486645+GabrielButti@users.noreply.github.com>
+Date:   Mon Aug 10 20:19:54 2026 -0300
+
+    Merge pull request #3 from BenitoMarculanoRibeiro/20260810-createstructure
+    
+    feat: adding project structure.
+
+[33mcommit 325635285a259bbb8388c1523debc5253b66a705[m[33m ([m[1;31morigin/20260810-createstructure[m[33m)[m
+Author: Gabriel Butti <gabriel.butti@hotmail.com>
+Date:   Mon Aug 10 20:18:02 2026 -0300
+
+    feat: adding project structure.
+
+docs/architecture.py
+infra/lambda/insertion.py
+sql/bronze_sql.sql
+sql/gold_sql.sql
+sql/silver_sql.sql
+
+[33mcommit cdabb4bc1b90b073c45e6adbfc2358a5a91480fb[m
+Merge: 62ee5f9 ad93601
+Author: Gabriel Butti <101486645+GabrielButti@users.noreply.github.com>
+Date:   Mon Aug 10 20:15:19 2026 -0300
+
+    Merge pull request #2 from BenitoMarculanoRibeiro/20260810-createstructure
+    
+    feat: adding project structure.
+
+[33mcommit ad9360102be3e4ce43a17ce4d48d20f08650c560[m
+Author: Gabriel Butti <gabriel.butti@hotmail.com>
+Date:   Mon Aug 10 20:12:36 2026 -0300
+
+    feat: adding project structure.
+
+glue/bronze_job.py
+glue/gold_job.py
+glue/silver_job.py
+
+[33mcommit 62ee5f9705ae8b0d6777d7adc4774085f57d63bd[m
+Merge: 5a2e720 1549b68
+Author: BenitoMarculanoRibeiro <49006573+BenitoMarculanoRibeiro@users.noreply.github.com>
+Date:   Sat Jul 18 16:59:38 2026 -0300
+
+    Merge pull request #1 from BenitoMarculanoRibeiro/TC2-11-criar-repositorio-github
+    
+    ## Objetivo
+    
+    Criar e configurar o repositório do Tech Challenge Fase 2.
+    
+    ## Alterações
+    
+    - Criação do repositório
+    - Configuração inicial do README
+    - Integração entre GitHub e Jira
+
+[33mcommit 1549b68a74883231ead839c95ae7a5c7b2eed6be[m[33m ([m[1;31morigin/TC2-11-criar-repositorio-github[m[33m)[m
+Author: BenitoMarculanoRibeiro <49006573+BenitoMarculanoRibeiro@users.noreply.github.com>
+Date:   Sat Jul 18 14:22:48 2026 -0300
+
+    TC2-11 - Criar repositório GitHub
+    
+    Criando o repositorio do Git, e vinculando ao Jira.
+
+README.md
+
+[33mcommit 5a2e720fcc014bacfcbe3fb8a42281c40a339038[m
+Author: BenitoMarculanoRibeiro <49006573+BenitoMarculanoRibeiro@users.noreply.github.com>
+Date:   Sat Jul 18 13:57:54 2026 -0300
+
+    Initial commit
+
+.gitignore
+README.md
