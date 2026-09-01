@@ -1,24 +1,30 @@
 # Step Functions no projeto
 
-A state machine Standard executa:
+A state machine Standard executa cinco etapas:
 
 1. carga BigQuery e municípios IBGE em paralelo;
 2. quatro jobs Bronze-to-Silver em paralelo;
-3. job Gold após todas as branches Silver concluírem.
+3. job Silver-to-Gold;
+4. preparação da lista dos nove crawlers;
+5. execução e acompanhamento dos crawlers em paralelo.
 
-O primeiro estado `Parallel` executa simultaneamente as Lambdas `carga` e
-`carga_municipios`. Após a conclusão das duas branches, o fluxo inicia um
-segundo estado `Parallel`, responsável pelos quatro jobs de transformação:
+O primeiro estado `Parallel` executa simultaneamente as duas Lambdas de carga.
+O segundo aguarda os quatro Glue Jobs Silver antes de iniciar a Gold.
 
-- `bronze_to_silver_uf`;
-- `bronze_to_silver_municipio`;
-- `bronze_to_silver_aluno`;
-- `bronze_to_silver_meta`.
+Após a Gold, `PrepararCrawlers` cria uma lista com os nove nomes recebidos por
+`DefinitionSubstitutions`. O estado `ExecutarCrawlers` usa um `Map` com
+concorrência máxima nove. Para cada item, o fluxo:
 
-A Step Function aguarda a conclusão de todas as branches Bronze-to-Silver antes
-de iniciar o job `gold`.
+1. chama `glue:startCrawler`;
+2. aguarda 15 segundos;
+3. consulta `glue:getCrawler`;
+4. repete enquanto o estado for `RUNNING` ou `STOPPING`;
+5. conclui apenas com `READY` e `LastCrawl.Status = SUCCEEDED`;
+6. gera `GlueCrawlerFailed` para qualquer outro resultado.
 
-Lambda e Glue recebem retries para falhas transitórias. A definição ASL fica em
-`infra/aws/step-functions` e recebe ARNs/nomes por `DefinitionSubstitutions`.
+Lambda e Glue Jobs recebem retries para falhas transitórias. A definição ASL
+fica em `infra/aws/step-functions/pipeline-alfabetizacao.asl.json`; ARNs e nomes físicos não
+são fixados nela, sendo fornecidos pelo CloudFormation.
 
-Logs `ERROR` não incluem dados de execução e expiram em sete dias.
+Os logs registram somente erros, não incluem os dados de execução e possuem
+retenção de sete dias.

@@ -54,6 +54,12 @@ cover/
 # Translations
 *.mo
 *.pot
+.tmp
+PowerBi/
+outputs/
+tools/
+tools/*
+!tools/*.ps1
 
 # Django stuff:
 *.log

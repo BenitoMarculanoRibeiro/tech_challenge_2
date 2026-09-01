@@ -1,7 +1,7 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: >-
-  Pipeline de alfabetização Bronze-Silver-Gold para o ambiente acadêmico
-  com nomes gerados e LabRole fornecida pelo Learner Lab.
+  Pipeline de alfabetização Bronze-Silver-Gold para o trabalho acadêmico,
+  com nomes físicos padronizados e LabRole fornecida pelo Learner Lab.
 
 Metadata:
   AWSToolsMetrics:
@@ -20,14 +20,6 @@ Metadata:
         scope: repository
 
 Parameters:
-  ProjectName:
-    Type: String
-    Default: tc2
-    AllowedPattern: '^[a-z][a-z0-9-]{1,20}$'
-  Environment:
-    Type: String
-    Default: dev
-    AllowedValues: [dev, test]
   ArtifactBucketName:
     Type: String
     MinLength: 3
@@ -40,7 +32,7 @@ Parameters:
     AllowedPattern: '^[A-Za-z0-9+=,.@_-]+$'
   GoogleCredentialsParameterName:
     Type: String
-    Default: /fiap/google-bigquery-credentials
+    Default: /tc2/google-bigquery-credentials
     AllowedPattern: '^/[A-Za-z0-9_.\-/]+$'
   AwsSdkPandasLayerArn:
     Type: String
@@ -80,8 +72,10 @@ Resources:
     Metadata:
       com.aws.cloudformation.Context:
         why: recebe Parquet imutável das fontes BigQuery, IBGE e API de metas
-        must: [acesso público bloqueado, nomes físicos gerados pela stack]
+        must: [acesso público bloqueado, nome físico padronizado por conta e região]
     Properties:
+      BucketName: !Sub 'bucket-bronze-${AWS::AccountId}-${AWS::Region}-an'
+      BucketNamespace: account-regional
       BucketEncryption:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}
@@ -110,8 +104,10 @@ Resources:
     Metadata:
       com.aws.cloudformation.Context:
         why: armazena dados normalizados e enriquecidos produzidos pelos quatro jobs Silver
-        must: [acesso público bloqueado, nomes físicos gerados pela stack]
+        must: [acesso público bloqueado, nome físico padronizado por conta e região]
     Properties:
+      BucketName: !Sub 'bucket-silver-${AWS::AccountId}-${AWS::Region}-an'
+      BucketNamespace: account-regional
       BucketEncryption:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}
@@ -138,8 +134,10 @@ Resources:
     Metadata:
       com.aws.cloudformation.Context:
         why: armazena indicadores, metas, evolução temporal e dataset analítico
-        must: [acesso público bloqueado, nomes físicos gerados pela stack]
+        must: [acesso público bloqueado, nome físico padronizado por conta e região]
     Properties:
+      BucketName: !Sub 'bucket-gold-${AWS::AccountId}-${AWS::Region}-an'
+      BucketNamespace: account-regional
       BucketEncryption:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}
@@ -199,15 +197,16 @@ Resources:
             Resource: [!GetAtt GoldBucket.Arn, !Sub '${GoldBucket.Arn}/*']
             Condition: {Bool: {aws:SecureTransport: 'false'}}
 
-  GoogleDependenciesLayer:
+  DependenciasGoogleLayer:
     Type: AWS::Lambda::LayerVersion
     Properties:
+      LayerName: dependenciasGoogle
       Description: Dependências Google Cloud geradas a partir de requirements.txt.
       CompatibleArchitectures: [x86_64]
       CompatibleRuntimes: [python3.12]
       Content:
         S3Bucket: !Ref ArtifactBucketName
-        S3Key: !Sub '${ArtifactPrefix}/lambda/layers/google-dependencies.zip'
+        S3Key: !Sub '${ArtifactPrefix}/lambda/layers/dependenciasGoogle.zip'
 
   CargaFunction:
     Type: AWS::Lambda::Function
@@ -216,7 +215,7 @@ Resources:
         why: ingere sete tabelas Base dos Dados/BigQuery para a Bronze
         must: [credencial lida do SSM em runtime, nunca empacotar google.json]
     Properties:
-      FunctionName: !Sub '${ProjectName}-carga-${Environment}'
+      FunctionName: batchCargaBaseDadosIndicadorAlfabetizacao
       Runtime: python3.12
       Architectures: [x86_64]
       Handler: lambda_function.lambda_handler
@@ -224,10 +223,10 @@ Resources:
       MemorySize: 1024
       Timeout: 900
       EphemeralStorage: {Size: 512}
-      Layers: [!Ref AwsSdkPandasLayerArn, !Ref GoogleDependenciesLayer]
+      Layers: [!Ref AwsSdkPandasLayerArn, !Ref DependenciasGoogleLayer]
       Code:
         S3Bucket: !Ref ArtifactBucketName
-        S3Key: !Sub '${ArtifactPrefix}/lambda/cargaFunction.zip'
+        S3Key: !Sub '${ArtifactPrefix}/lambda/batchCargaBaseDadosIndicadorAlfabetizacao.zip'
       Environment:
         Variables:
           BRONZE_BUCKET: !Ref BronzeBucket
@@ -236,7 +235,7 @@ Resources:
   CargaMunicipiosFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub '${ProjectName}-carga-municipios-${Environment}'
+      FunctionName: batchCargaTabelaMunicipioIBGE
       Runtime: python3.12
       Architectures: [x86_64]
       Handler: lambda_function.lambda_handler
@@ -247,7 +246,7 @@ Resources:
       Layers: [!Ref AwsSdkPandasLayerArn]
       Code:
         S3Bucket: !Ref ArtifactBucketName
-        S3Key: !Sub '${ArtifactPrefix}/lambda/cargaTabelaMunicipio.zip'
+        S3Key: !Sub '${ArtifactPrefix}/lambda/batchCargaTabelaMunicipioIBGE.zip'
       Environment:
         Variables: {BRONZE_BUCKET: !Ref BronzeBucket}
 
@@ -256,13 +255,13 @@ Resources:
     Properties:
       CatalogId: !Ref AWS::AccountId
       DatabaseInput:
-        Name: tc2-glue-database-table
+        Name: tc2-alfabetizacao
         Description: Catálogo da camada Gold para validação com Athena.
 
   SilverAlunoJob:
     Type: AWS::Glue::Job
     Properties:
-      Name: !Sub '${ProjectName}-bronze-to-silver-aluno-${Environment}'
+      Name: bronze-to-silver-alunos
       Role: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${LabRoleName}'
       GlueVersion: '5.1'
       WorkerType: G.1X
@@ -281,7 +280,7 @@ Resources:
   SilverMunicipioJob:
     Type: AWS::Glue::Job
     Properties:
-      Name: !Sub '${ProjectName}-bronze-to-silver-municipio-${Environment}'
+      Name: bronze-to-silver-municipios
       Role: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${LabRoleName}'
       GlueVersion: '5.1'
       WorkerType: G.1X
@@ -296,7 +295,7 @@ Resources:
   SilverUfJob:
     Type: AWS::Glue::Job
     Properties:
-      Name: !Sub '${ProjectName}-bronze-to-silver-uf-${Environment}'
+      Name: bronze-to-silver-uf
       Role: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${LabRoleName}'
       GlueVersion: '5.1'
       WorkerType: G.1X
@@ -308,7 +307,7 @@ Resources:
   SilverMetaJob:
     Type: AWS::Glue::Job
     Properties:
-      Name: !Sub '${ProjectName}-bronze-to-silver-meta-${Environment}'
+      Name: bronze-to-silver-metas
       Role: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${LabRoleName}'
       GlueVersion: '5.1'
       WorkerType: G.1X
@@ -320,7 +319,7 @@ Resources:
   GoldJob:
     Type: AWS::Glue::Job
     Properties:
-      Name: !Sub '${ProjectName}-silver-to-gold-${Environment}'
+      Name: silver-to-gold
       Role: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${LabRoleName}'
       GlueVersion: '5.1'
       WorkerType: G.1X
@@ -331,19 +330,145 @@ Resources:
 
   IndicadorUfCrawler:
     Type: AWS::Glue::Crawler
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: cataloga a saída Gold indicador_uf depois de cada execução da pipeline
+        must: [usar o database Gold existente, apontar apenas para o prefixo indicador_uf]
     Properties:
-      Name: !Sub '${ProjectName}-indicador-uf-${Environment}'
+      Name: tc2-crawler-indicador-uf
       Role: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${LabRoleName}'
       DatabaseName: !Ref GlueDatabase
       Targets:
         S3Targets:
           - Path: !Sub 's3://${GoldBucket}/indicador_uf/'
+      RecrawlPolicy: {RecrawlBehavior: CRAWL_EVERYTHING}
       SchemaChangePolicy: {UpdateBehavior: UPDATE_IN_DATABASE, DeleteBehavior: LOG}
+      LineageConfiguration: {CrawlerLineageSettings: DISABLE}
+
+  EvolucaoTemporalBrasilCrawler:
+    Type: AWS::Glue::Crawler
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: cataloga a evolução temporal nacional produzida pela Gold
+        must: [usar o database Gold existente, apontar apenas para evolucao_temporal_brasil]
+    Properties:
+      Name: tc2-crawler-evolucao-brasil
+      Role: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${LabRoleName}'
+      DatabaseName: !Ref GlueDatabase
+      Targets: {S3Targets: [{Path: !Sub 's3://${GoldBucket}/evolucao_temporal_brasil/'}]}
+      RecrawlPolicy: {RecrawlBehavior: CRAWL_EVERYTHING}
+      SchemaChangePolicy: {UpdateBehavior: UPDATE_IN_DATABASE, DeleteBehavior: LOG}
+      LineageConfiguration: {CrawlerLineageSettings: DISABLE}
+
+  EvolucaoTemporalMunicipioCrawler:
+    Type: AWS::Glue::Crawler
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: cataloga a evolução temporal municipal produzida pela Gold
+        must: [usar o database Gold existente, apontar apenas para evolucao_temporal_municipio]
+    Properties:
+      Name: tc2-crawler-evolucao-municipio
+      Role: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${LabRoleName}'
+      DatabaseName: !Ref GlueDatabase
+      Targets: {S3Targets: [{Path: !Sub 's3://${GoldBucket}/evolucao_temporal_municipio/'}]}
+      RecrawlPolicy: {RecrawlBehavior: CRAWL_EVERYTHING}
+      SchemaChangePolicy: {UpdateBehavior: UPDATE_IN_DATABASE, DeleteBehavior: LOG}
+      LineageConfiguration: {CrawlerLineageSettings: DISABLE}
+
+  EvolucaoTemporalUfCrawler:
+    Type: AWS::Glue::Crawler
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: cataloga a evolução temporal por UF produzida pela Gold
+        must: [usar o database Gold existente, apontar apenas para evolucao_temporal_uf]
+    Properties:
+      Name: tc2-crawler-evolucao-uf
+      Role: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${LabRoleName}'
+      DatabaseName: !Ref GlueDatabase
+      Targets: {S3Targets: [{Path: !Sub 's3://${GoldBucket}/evolucao_temporal_uf/'}]}
+      RecrawlPolicy: {RecrawlBehavior: CRAWL_EVERYTHING}
+      SchemaChangePolicy: {UpdateBehavior: UPDATE_IN_DATABASE, DeleteBehavior: LOG}
+      LineageConfiguration: {CrawlerLineageSettings: DISABLE}
+
+  IndicadorBrasilCrawler:
+    Type: AWS::Glue::Crawler
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: cataloga o indicador nacional produzido pela Gold
+        must: [usar o database Gold existente, apontar apenas para indicador_brasil]
+    Properties:
+      Name: tc2-crawler-indicador-brasil
+      Role: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${LabRoleName}'
+      DatabaseName: !Ref GlueDatabase
+      Targets: {S3Targets: [{Path: !Sub 's3://${GoldBucket}/indicador_brasil/'}]}
+      RecrawlPolicy: {RecrawlBehavior: CRAWL_EVERYTHING}
+      SchemaChangePolicy: {UpdateBehavior: UPDATE_IN_DATABASE, DeleteBehavior: LOG}
+      LineageConfiguration: {CrawlerLineageSettings: DISABLE}
+
+  IndicadorMunicipioCrawler:
+    Type: AWS::Glue::Crawler
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: cataloga o indicador municipal produzido pela Gold
+        must: [usar o database Gold existente, apontar apenas para indicador_municipio]
+    Properties:
+      Name: tc2-crawler-indicador-municipio
+      Role: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${LabRoleName}'
+      DatabaseName: !Ref GlueDatabase
+      Targets: {S3Targets: [{Path: !Sub 's3://${GoldBucket}/indicador_municipio/'}]}
+      RecrawlPolicy: {RecrawlBehavior: CRAWL_EVERYTHING}
+      SchemaChangePolicy: {UpdateBehavior: UPDATE_IN_DATABASE, DeleteBehavior: LOG}
+      LineageConfiguration: {CrawlerLineageSettings: DISABLE}
+
+  MetasVsResultadoBrasilCrawler:
+    Type: AWS::Glue::Crawler
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: cataloga a comparação nacional entre metas e resultados
+        must: [usar o database Gold existente, apontar apenas para metas_vs_resultado_brasil]
+    Properties:
+      Name: tc2-crawler-metas-brasil
+      Role: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${LabRoleName}'
+      DatabaseName: !Ref GlueDatabase
+      Targets: {S3Targets: [{Path: !Sub 's3://${GoldBucket}/metas_vs_resultado_brasil/'}]}
+      RecrawlPolicy: {RecrawlBehavior: CRAWL_EVERYTHING}
+      SchemaChangePolicy: {UpdateBehavior: UPDATE_IN_DATABASE, DeleteBehavior: LOG}
+      LineageConfiguration: {CrawlerLineageSettings: DISABLE}
+
+  MetasVsResultadoMunicipioCrawler:
+    Type: AWS::Glue::Crawler
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: cataloga a comparação municipal entre metas e resultados
+        must: [usar o database Gold existente, apontar apenas para metas_vs_resultado_municipio]
+    Properties:
+      Name: tc2-crawler-metas-municipio
+      Role: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${LabRoleName}'
+      DatabaseName: !Ref GlueDatabase
+      Targets: {S3Targets: [{Path: !Sub 's3://${GoldBucket}/metas_vs_resultado_municipio/'}]}
+      RecrawlPolicy: {RecrawlBehavior: CRAWL_EVERYTHING}
+      SchemaChangePolicy: {UpdateBehavior: UPDATE_IN_DATABASE, DeleteBehavior: LOG}
+      LineageConfiguration: {CrawlerLineageSettings: DISABLE}
+
+  MetasVsResultadoUfCrawler:
+    Type: AWS::Glue::Crawler
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: cataloga a comparação por UF entre metas e resultados
+        must: [usar o database Gold existente, apontar apenas para metas_vs_resultado_uf]
+    Properties:
+      Name: tc2-crawler-metas-uf
+      Role: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${LabRoleName}'
+      DatabaseName: !Ref GlueDatabase
+      Targets: {S3Targets: [{Path: !Sub 's3://${GoldBucket}/metas_vs_resultado_uf/'}]}
+      RecrawlPolicy: {RecrawlBehavior: CRAWL_EVERYTHING}
+      SchemaChangePolicy: {UpdateBehavior: UPDATE_IN_DATABASE, DeleteBehavior: LOG}
+      LineageConfiguration: {CrawlerLineageSettings: DISABLE}
 
   PipelineLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: !Sub '/aws/vendedlogs/states/${ProjectName}-steps-${Environment}'
+      LogGroupName: /aws/vendedlogs/states/pipeline-alfabetizacao
       RetentionInDays: 7
 
   PipelineStateMachine:
@@ -353,12 +478,12 @@ Resources:
         why: externaliza a ordem e paralelismo do pipeline para avaliação visual
         must: [executar Glue com integração .sync, não transportar credenciais no estado]
     Properties:
-      StateMachineName: !Sub '${ProjectName}-steps-${Environment}'
+      StateMachineName: pipeline-alfabetizacao
       StateMachineType: STANDARD
       RoleArn: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${LabRoleName}'
       DefinitionS3Location:
         Bucket: !Ref ArtifactBucketName
-        Key: !Sub '${ArtifactPrefix}/step-functions/tc2-steps.asl.json'
+        Key: !Sub '${ArtifactPrefix}/step-functions/pipeline-alfabetizacao.asl.json'
       DefinitionSubstitutions:
         CargaFunctionArn: !GetAtt CargaFunction.Arn
         CargaMunicipiosFunctionArn: !GetAtt CargaMunicipiosFunction.Arn
@@ -367,6 +492,15 @@ Resources:
         SilverAlunoJobName: !Ref SilverAlunoJob
         SilverMetaJobName: !Ref SilverMetaJob
         GoldJobName: !Ref GoldJob
+        EvolucaoTemporalBrasilCrawlerName: !Ref EvolucaoTemporalBrasilCrawler
+        EvolucaoTemporalMunicipioCrawlerName: !Ref EvolucaoTemporalMunicipioCrawler
+        EvolucaoTemporalUfCrawlerName: !Ref EvolucaoTemporalUfCrawler
+        IndicadorBrasilCrawlerName: !Ref IndicadorBrasilCrawler
+        IndicadorMunicipioCrawlerName: !Ref IndicadorMunicipioCrawler
+        IndicadorUfCrawlerName: !Ref IndicadorUfCrawler
+        MetasVsResultadoBrasilCrawlerName: !Ref MetasVsResultadoBrasilCrawler
+        MetasVsResultadoMunicipioCrawlerName: !Ref MetasVsResultadoMunicipioCrawler
+        MetasVsResultadoUfCrawlerName: !Ref MetasVsResultadoUfCrawler
       LoggingConfiguration:
         Destinations:
           - CloudWatchLogsLogGroup: {LogGroupArn: !GetAtt PipelineLogGroup.Arn}
@@ -376,7 +510,7 @@ Resources:
   CargaMetaFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub '${ProjectName}-carga-meta-${Environment}'
+      FunctionName: streamMetaAlfabetizacaoBrasil
       Runtime: python3.12
       Architectures: [x86_64]
       Handler: lambda_function.lambda_handler
@@ -387,7 +521,7 @@ Resources:
       Layers: [!Ref AwsSdkPandasLayerArn]
       Code:
         S3Bucket: !Ref ArtifactBucketName
-        S3Key: !Sub '${ArtifactPrefix}/lambda/cargaMetaAlfabetizacaoBrasil.zip'
+        S3Key: !Sub '${ArtifactPrefix}/lambda/streamMetaAlfabetizacaoBrasil.zip'
       Environment:
         Variables:
           BRONZE_BUCKET: !Ref BronzeBucket
@@ -396,7 +530,7 @@ Resources:
   StreamingRule:
     Type: AWS::Events::Rule
     Properties:
-      Name: !Sub '${ProjectName}-ingestao-streaming-${Environment}'
+      Name: evento-metas
       State: ENABLED
       EventPattern:
         source: [com.tc2]
@@ -420,7 +554,7 @@ Resources:
         why: prova de conceito de ingestão HTTP; endpoint público por decisão acadêmica
         must: [documentar que AuthorizationType NONE não é adequado para produção]
     Properties:
-      Name: !Sub '${ProjectName}-api-streaming-${Environment}'
+      Name: api-metas
       ProtocolType: HTTP
 
   StreamingIntegration:
@@ -472,7 +606,7 @@ Resources:
         why: centraliza sinais operacionais de Lambda, S3, Glue, API e cobrança observados no ambiente acadêmico
         must: [usar referências da stack; não fixar bucket, API ID ou account ID]
     Properties:
-      DashboardName: !Sub '${ProjectName}-cloudwatch-dashboard-${Environment}'
+      DashboardName: tc2-cloudwatch-dashboard
       DashboardBody: !Sub |
         {
           "widgets": [
@@ -554,7 +688,7 @@ Resources:
         must: [sem ações automáticas; e-mail informado apenas no deployment]
     Properties:
       Budget:
-        BudgetName: !Sub '${ProjectName}-budget-${Environment}'
+        BudgetName: tc2-budget
         BudgetLimit: {Amount: !Ref BudgetLimitUsd, Unit: USD}
         BudgetType: COST
         TimeUnit: MONTHLY

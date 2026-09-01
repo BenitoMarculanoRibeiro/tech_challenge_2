@@ -45,7 +45,7 @@ WITH por_uf AS (
         APPROX_PERCENTILE(diferenca_pp_vs_uf, 0.9)
             - APPROX_PERCENTILE(diferenca_pp_vs_uf, 0.1)    AS amplitude_p10_p90_pp
     FROM
-        "tc2-glue-database-table"."indicador_municipio"
+        "tc2-alfabetizacao"."indicador_municipio"
     WHERE
         ano = '2024'
         AND rede_descricao = 'Municipal'

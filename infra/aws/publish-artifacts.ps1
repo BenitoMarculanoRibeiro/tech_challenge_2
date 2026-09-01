@@ -8,6 +8,9 @@ param(
     [string]$Region = 'us-east-1',
 
     [ValidateNotNullOrEmpty()]
+    [string]$Profile = 'default',
+
+    [ValidateNotNullOrEmpty()]
     [string]$PythonCommand = 'python',
 
     [switch]$Execute
@@ -23,15 +26,15 @@ $layerRoot = Join-Path $buildRoot 'layer'
 $requirementsPath = Join-Path $projectRoot 'infra\lambda\requirements.txt'
 
 $sourceArtifacts = [ordered]@{
-    'lambda/cargaFunction.zip' = Join-Path $projectRoot 'infra\lambda\cargaFunction\lambda_function.py'
-    'lambda/cargaTabelaMunicipio.zip' = Join-Path $projectRoot 'infra\lambda\cargaTabelaMunicipio\lambda_function.py'
-    'lambda/cargaMetaAlfabetizacaoBrasil.zip' = Join-Path $projectRoot 'infra\lambda\cargaMetaAlfabetizacaoBrasil\lambda_function.py'
+    'lambda/batchCargaBaseDadosIndicadorAlfabetizacao.zip' = Join-Path $projectRoot 'infra\lambda\batchCargaBaseDadosIndicadorAlfabetizacao\lambda_function.py'
+    'lambda/batchCargaTabelaMunicipioIBGE.zip' = Join-Path $projectRoot 'infra\lambda\batchCargaTabelaMunicipioIBGE\lambda_function.py'
+    'lambda/streamMetaAlfabetizacaoBrasil.zip' = Join-Path $projectRoot 'infra\lambda\streamMetaAlfabetizacaoBrasil\lambda_function.py'
     'glue/bronze_to_silver_aluno_job.py' = Join-Path $projectRoot 'glue\bronze_to_silver\bronze_to_silver_aluno_job.py'
     'glue/bronze_to_silver_municipio_job.py' = Join-Path $projectRoot 'glue\bronze_to_silver\bronze_to_silver_municipio_job.py'
     'glue/bronze_to_silver_uf_job.py' = Join-Path $projectRoot 'glue\bronze_to_silver\bronze_to_silver_uf_job.py'
     'glue/bronze_to_silver_meta_job.py' = Join-Path $projectRoot 'glue\bronze_to_silver\bronze_to_silver_meta_job.py'
     'glue/gold_job.py' = Join-Path $projectRoot 'glue\silver_to_gold\gold_job.py'
-    'step-functions/tc2-steps.asl.json' = Join-Path $projectRoot 'infra\aws\step-functions\tc2-steps.asl.json'
+    'step-functions/pipeline-alfabetizacao.asl.json' = Join-Path $projectRoot 'infra\aws\step-functions\pipeline-alfabetizacao.asl.json'
 }
 
 $requiredFiles = @($sourceArtifacts.Values) + $requirementsPath
@@ -91,9 +94,9 @@ function New-DeterministicZip {
 }
 
 Write-Host 'Gerando pacotes das Lambdas...'
-New-DeterministicZip -SourceDirectory (Split-Path -Parent $sourceArtifacts['lambda/cargaFunction.zip']) -Destination (Join-Path $artifactRoot 'lambda\cargaFunction.zip')
-New-DeterministicZip -SourceDirectory (Split-Path -Parent $sourceArtifacts['lambda/cargaTabelaMunicipio.zip']) -Destination (Join-Path $artifactRoot 'lambda\cargaTabelaMunicipio.zip')
-New-DeterministicZip -SourceDirectory (Split-Path -Parent $sourceArtifacts['lambda/cargaMetaAlfabetizacaoBrasil.zip']) -Destination (Join-Path $artifactRoot 'lambda\cargaMetaAlfabetizacaoBrasil.zip')
+New-DeterministicZip -SourceDirectory (Split-Path -Parent $sourceArtifacts['lambda/batchCargaBaseDadosIndicadorAlfabetizacao.zip']) -Destination (Join-Path $artifactRoot 'lambda\batchCargaBaseDadosIndicadorAlfabetizacao.zip')
+New-DeterministicZip -SourceDirectory (Split-Path -Parent $sourceArtifacts['lambda/batchCargaTabelaMunicipioIBGE.zip']) -Destination (Join-Path $artifactRoot 'lambda\batchCargaTabelaMunicipioIBGE.zip')
+New-DeterministicZip -SourceDirectory (Split-Path -Parent $sourceArtifacts['lambda/streamMetaAlfabetizacaoBrasil.zip']) -Destination (Join-Path $artifactRoot 'lambda\streamMetaAlfabetizacaoBrasil.zip')
 
 Write-Host 'Gerando layer Google para Python 3.12 x86_64...'
 $layerPythonDirectory = Join-Path $layerRoot 'python'
@@ -140,7 +143,7 @@ Get-ChildItem -LiteralPath $layerPythonDirectory -File -Recurse -Filter 'RECORD'
     Where-Object { $_.DirectoryName -like '*.dist-info' } |
     Remove-Item -Force
 
-$layerDestination = Join-Path $artifactRoot 'lambda\layers\google-dependencies.zip'
+$layerDestination = Join-Path $artifactRoot 'lambda\layers\dependenciasGoogle.zip'
 New-DeterministicZip -SourceDirectory $layerRoot -Destination $layerDestination
 
 Write-Host 'Copiando scripts Glue e definicao da Step Function...'
@@ -178,16 +181,16 @@ $manifestPath = Join-Path $artifactRoot 'manifest.json'
 $manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
 
 $expectedPaths = @(
-    'lambda/layers/google-dependencies.zip',
-    'lambda/cargaFunction.zip',
-    'lambda/cargaTabelaMunicipio.zip',
-    'lambda/cargaMetaAlfabetizacaoBrasil.zip',
+    'lambda/layers/dependenciasGoogle.zip',
+    'lambda/batchCargaBaseDadosIndicadorAlfabetizacao.zip',
+    'lambda/batchCargaTabelaMunicipioIBGE.zip',
+    'lambda/streamMetaAlfabetizacaoBrasil.zip',
     'glue/bronze_to_silver_aluno_job.py',
     'glue/bronze_to_silver_municipio_job.py',
     'glue/bronze_to_silver_uf_job.py',
     'glue/bronze_to_silver_meta_job.py',
     'glue/gold_job.py',
-    'step-functions/tc2-steps.asl.json',
+    'step-functions/pipeline-alfabetizacao.asl.json',
     'manifest.json'
 )
 foreach ($relativePath in $expectedPaths) {
@@ -213,7 +216,7 @@ if ($Execute) {
     foreach ($relativePath in $expectedPaths) {
         $localPath = Join-Path $artifactRoot ($relativePath -replace '/', '\')
         $destination = "s3://$ArtifactBucketName/$artifactPrefix/$relativePath"
-        & aws s3 cp $localPath $destination --region $Region --only-show-errors
+        & aws s3 cp $localPath $destination --profile $Profile --region $Region --only-show-errors
         if ($LASTEXITCODE -ne 0) {
             throw "Falha ao publicar $relativePath (codigo $LASTEXITCODE)."
         }

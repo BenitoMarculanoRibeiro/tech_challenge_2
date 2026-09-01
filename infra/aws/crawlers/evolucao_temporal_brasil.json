@@ -1,0 +1,10 @@
+{
+  "logicalId": "EvolucaoTemporalBrasilCrawler",
+  "name": "tc2-crawler-evolucao-brasil",
+  "databaseName": "tc2-alfabetizacao",
+  "role": "LabRole",
+  "target": "s3://${GOLD_BUCKET}/evolucao_temporal_brasil/",
+  "schemaChangePolicy": { "updateBehavior": "UPDATE_IN_DATABASE", "deleteBehavior": "LOG" },
+  "recrawlPolicy": { "recrawlBehavior": "CRAWL_EVERYTHING" },
+  "lineageConfiguration": { "crawlerLineageSettings": "DISABLE" }
+}

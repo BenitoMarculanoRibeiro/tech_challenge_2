@@ -18,7 +18,7 @@ SELECT
     ROUND(AVG(gap_pp), 1)                             AS gap_medio_pp,
     ROUND(APPROX_PERCENTILE(gap_pp, 0.5), 1)          AS gap_mediano_pp
 FROM
-    "tc2-glue-database-table"."metas_vs_resultado_municipio"
+    "tc2-alfabetizacao"."metas_vs_resultado_municipio"
 WHERE
     ano = '2024'
     AND escopo_meta = 'municipio'

@@ -1,5 +1,5 @@
 {
-  "Comment": "Pipeline batch Bronze, Silver e Gold do Tech Challenge.",
+  "Comment": "Pipeline de alfabetizacao: ingestao, camadas Bronze/Silver/Gold e catalogacao Glue.",
   "StartAt": "IngestaoBatch",
   "States": {
     "IngestaoBatch": {
@@ -49,6 +49,71 @@
       "Resource": "arn:aws:states:::glue:startJobRun.sync",
       "Parameters": {"JobName": "${GoldJobName}"},
       "Retry": [{"ErrorEquals": ["Glue.ConcurrentRunsExceededException", "Glue.InternalServiceException", "Glue.OperationTimeoutException"], "IntervalSeconds": 5, "MaxAttempts": 3, "BackoffRate": 2}],
+      "Next": "PrepararCrawlers"
+    },
+    "PrepararCrawlers": {
+      "Type": "Pass",
+      "Result": {
+        "Crawlers": [
+          "${EvolucaoTemporalBrasilCrawlerName}",
+          "${EvolucaoTemporalMunicipioCrawlerName}",
+          "${EvolucaoTemporalUfCrawlerName}",
+          "${IndicadorBrasilCrawlerName}",
+          "${IndicadorMunicipioCrawlerName}",
+          "${IndicadorUfCrawlerName}",
+          "${MetasVsResultadoBrasilCrawlerName}",
+          "${MetasVsResultadoMunicipioCrawlerName}",
+          "${MetasVsResultadoUfCrawlerName}"
+        ]
+      },
+      "Next": "ExecutarCrawlers"
+    },
+    "ExecutarCrawlers": {
+      "Type": "Map",
+      "ItemsPath": "$.Crawlers",
+      "MaxConcurrency": 9,
+      "ItemSelector": {
+        "CrawlerName.$": "$$.Map.Item.Value"
+      },
+      "Iterator": {
+        "StartAt": "IniciarCrawler",
+        "States": {
+          "IniciarCrawler": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::aws-sdk:glue:startCrawler",
+            "Parameters": {"Name.$": "$.CrawlerName"},
+            "ResultPath": null,
+            "Retry": [{"ErrorEquals": ["Glue.OperationTimeoutException", "Glue.ConcurrentModificationException"], "IntervalSeconds": 3, "MaxAttempts": 3, "BackoffRate": 2}],
+            "Next": "AguardarCrawler"
+          },
+          "AguardarCrawler": {
+            "Type": "Wait",
+            "Seconds": 15,
+            "Next": "ConsultarCrawler"
+          },
+          "ConsultarCrawler": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::aws-sdk:glue:getCrawler",
+            "Parameters": {"Name.$": "$.CrawlerName"},
+            "ResultPath": "$.CrawlerResult",
+            "Next": "VerificarCrawler"
+          },
+          "VerificarCrawler": {
+            "Type": "Choice",
+            "Choices": [
+              {"Variable": "$.CrawlerResult.Crawler.State", "StringEquals": "RUNNING", "Next": "AguardarCrawler"},
+              {"Variable": "$.CrawlerResult.Crawler.State", "StringEquals": "STOPPING", "Next": "AguardarCrawler"},
+              {"And": [
+                {"Variable": "$.CrawlerResult.Crawler.State", "StringEquals": "READY"},
+                {"Variable": "$.CrawlerResult.Crawler.LastCrawl.Status", "StringEquals": "SUCCEEDED"}
+              ], "Next": "CrawlerConcluido"}
+            ],
+            "Default": "CrawlerFalhou"
+          },
+          "CrawlerConcluido": {"Type": "Succeed"},
+          "CrawlerFalhou": {"Type": "Fail", "Error": "GlueCrawlerFailed", "Cause": "Crawler não concluiu com status SUCCEEDED"}
+        }
+      },
       "End": true
     }
   }

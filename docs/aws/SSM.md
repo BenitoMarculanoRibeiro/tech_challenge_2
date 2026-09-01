@@ -5,7 +5,7 @@ credencial utilizada na integração com o Google BigQuery.
 
 O parâmetro utilizado é:
 
-`/fiap/google-bigquery-credentials`
+`/tc2/google-bigquery-credentials`
 
 O valor deve conter o JSON completo de uma Service Account do Google Cloud e
 deve ser armazenado como `SecureString`.

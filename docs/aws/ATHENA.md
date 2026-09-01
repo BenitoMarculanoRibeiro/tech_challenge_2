@@ -50,19 +50,26 @@ Data Catalog após a execução do crawler.
 ## Configuração dos resultados
 
 Antes de executar consultas no Athena, é necessário configurar um local para
-armazenamento dos resultados das queries.
-
-Esse local deve apontar para um bucket ou prefixo S3 disponível no ambiente de
-execução.
-
-Exemplo:
+armazenamento dos resultados das queries. No ambiente do projeto, a localização
+adotada é:
 
 ```text
-s3://<bucket-de-resultados-athena>/
+s3://<GoldBucketName>/resultados-athena/
 ```
 
-Essa configuração pode ser realizada diretamente nas configurações do
-workgroup utilizado para executar as consultas.
+O nome do bucket é obtido do output `GoldBucketName` do stack CloudFormation,
+sem depender de um nome físico fixo. O prefixo não faz parte dos alvos dos
+crawlers e, portanto, os arquivos de saída não são catalogados como tabelas
+Gold.
+
+Para aplicar ou restaurar a configuração no ambiente do Mauricio:
+
+```powershell
+.\infra\aws\configure-athena-results.ps1 -Profile <AWS_PROFILE>
+```
+
+O script configura o workgroup com criptografia SSE-S3, valida o proprietário
+esperado do bucket e força o uso da localização definida no workgroup.
 
 ## Workgroup
 
@@ -75,6 +82,10 @@ primary
 Não é necessário criar um workgroup dedicado apenas para a demonstração
 acadêmica, embora essa separação possa ser adotada em ambientes produtivos para
 controle de permissões, custos e configurações específicas.
+
+Os resultados gravados no S3 também geram custos de armazenamento e requisições.
+Eles podem ser removidos quando deixarem de ser necessários para auditoria ou
+reprodução das consultas.
 
 ## Custos e boas práticas
 

@@ -4,7 +4,7 @@ O CloudFormation cria log groups para as três Lambdas e para a Step Function,
 com retenção de sete dias. Os jobs Glue utilizam logs contínuos e métricas
 habilitadas pelos argumentos dos jobs.
 
-O projeto também cria o dashboard `tc2-cloudwatch-dashboard-${Environment}`,
+O projeto também cria o dashboard `tc2-cloudwatch-dashboard`,
 utilizando referências automáticas aos recursos da stack, sem fixar account ID,
 nomes físicos de buckets ou ID da API.
 
