@@ -1,0 +1,120 @@
+{
+  "Comment": "Pipeline de alfabetizacao: ingestao, camadas Bronze/Silver/Gold e catalogacao Glue.",
+  "StartAt": "IngestaoBatch",
+  "States": {
+    "IngestaoBatch": {
+      "Type": "Parallel",
+      "Branches": [
+        {
+          "StartAt": "CargaBigQuery",
+          "States": {
+            "CargaBigQuery": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Parameters": {"FunctionName": "${CargaFunctionArn}", "Payload": {}},
+              "Retry": [{"ErrorEquals": ["Lambda.ServiceException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 2, "MaxAttempts": 3, "BackoffRate": 2}],
+              "TimeoutSeconds": 900,
+              "End": true
+            }
+          }
+        },
+        {
+          "StartAt": "CargaMunicipiosIBGE",
+          "States": {
+            "CargaMunicipiosIBGE": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Parameters": {"FunctionName": "${CargaMunicipiosFunctionArn}", "Payload": {}},
+              "Retry": [{"ErrorEquals": ["Lambda.ServiceException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 2, "MaxAttempts": 3, "BackoffRate": 2}],
+              "TimeoutSeconds": 60,
+              "End": true
+            }
+          }
+        }
+      ],
+      "Next": "TransformacaoSilver"
+    },
+    "TransformacaoSilver": {
+      "Type": "Parallel",
+      "Branches": [
+        {"StartAt": "SilverUF", "States": {"SilverUF": {"Type": "Task", "Resource": "arn:aws:states:::glue:startJobRun.sync", "Parameters": {"JobName": "${SilverUfJobName}"}, "Retry": [{"ErrorEquals": ["Glue.ConcurrentRunsExceededException", "Glue.InternalServiceException", "Glue.OperationTimeoutException"], "IntervalSeconds": 5, "MaxAttempts": 3, "BackoffRate": 2}], "End": true}}},
+        {"StartAt": "SilverMunicipio", "States": {"SilverMunicipio": {"Type": "Task", "Resource": "arn:aws:states:::glue:startJobRun.sync", "Parameters": {"JobName": "${SilverMunicipioJobName}"}, "Retry": [{"ErrorEquals": ["Glue.ConcurrentRunsExceededException", "Glue.InternalServiceException", "Glue.OperationTimeoutException"], "IntervalSeconds": 5, "MaxAttempts": 3, "BackoffRate": 2}], "End": true}}},
+        {"StartAt": "SilverAluno", "States": {"SilverAluno": {"Type": "Task", "Resource": "arn:aws:states:::glue:startJobRun.sync", "Parameters": {"JobName": "${SilverAlunoJobName}"}, "Retry": [{"ErrorEquals": ["Glue.ConcurrentRunsExceededException", "Glue.InternalServiceException", "Glue.OperationTimeoutException"], "IntervalSeconds": 5, "MaxAttempts": 3, "BackoffRate": 2}], "End": true}}},
+        {"StartAt": "SilverMeta", "States": {"SilverMeta": {"Type": "Task", "Resource": "arn:aws:states:::glue:startJobRun.sync", "Parameters": {"JobName": "${SilverMetaJobName}"}, "Retry": [{"ErrorEquals": ["Glue.ConcurrentRunsExceededException", "Glue.InternalServiceException", "Glue.OperationTimeoutException"], "IntervalSeconds": 5, "MaxAttempts": 3, "BackoffRate": 2}], "End": true}}}
+      ],
+      "Next": "Gold"
+    },
+    "Gold": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::glue:startJobRun.sync",
+      "Parameters": {"JobName": "${GoldJobName}"},
+      "Retry": [{"ErrorEquals": ["Glue.ConcurrentRunsExceededException", "Glue.InternalServiceException", "Glue.OperationTimeoutException"], "IntervalSeconds": 5, "MaxAttempts": 3, "BackoffRate": 2}],
+      "Next": "PrepararCrawlers"
+    },
+    "PrepararCrawlers": {
+      "Type": "Pass",
+      "Result": {
+        "Crawlers": [
+          "${EvolucaoTemporalBrasilCrawlerName}",
+          "${EvolucaoTemporalMunicipioCrawlerName}",
+          "${EvolucaoTemporalUfCrawlerName}",
+          "${IndicadorBrasilCrawlerName}",
+          "${IndicadorMunicipioCrawlerName}",
+          "${IndicadorUfCrawlerName}",
+          "${MetasVsResultadoBrasilCrawlerName}",
+          "${MetasVsResultadoMunicipioCrawlerName}",
+          "${MetasVsResultadoUfCrawlerName}"
+        ]
+      },
+      "Next": "ExecutarCrawlers"
+    },
+    "ExecutarCrawlers": {
+      "Type": "Map",
+      "ItemsPath": "$.Crawlers",
+      "MaxConcurrency": 9,
+      "ItemSelector": {
+        "CrawlerName.$": "$$.Map.Item.Value"
+      },
+      "Iterator": {
+        "StartAt": "IniciarCrawler",
+        "States": {
+          "IniciarCrawler": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::aws-sdk:glue:startCrawler",
+            "Parameters": {"Name.$": "$.CrawlerName"},
+            "ResultPath": null,
+            "Retry": [{"ErrorEquals": ["Glue.OperationTimeoutException", "Glue.ConcurrentModificationException"], "IntervalSeconds": 3, "MaxAttempts": 3, "BackoffRate": 2}],
+            "Next": "AguardarCrawler"
+          },
+          "AguardarCrawler": {
+            "Type": "Wait",
+            "Seconds": 15,
+            "Next": "ConsultarCrawler"
+          },
+          "ConsultarCrawler": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::aws-sdk:glue:getCrawler",
+            "Parameters": {"Name.$": "$.CrawlerName"},
+            "ResultPath": "$.CrawlerResult",
+            "Next": "VerificarCrawler"
+          },
+          "VerificarCrawler": {
+            "Type": "Choice",
+            "Choices": [
+              {"Variable": "$.CrawlerResult.Crawler.State", "StringEquals": "RUNNING", "Next": "AguardarCrawler"},
+              {"Variable": "$.CrawlerResult.Crawler.State", "StringEquals": "STOPPING", "Next": "AguardarCrawler"},
+              {"And": [
+                {"Variable": "$.CrawlerResult.Crawler.State", "StringEquals": "READY"},
+                {"Variable": "$.CrawlerResult.Crawler.LastCrawl.Status", "StringEquals": "SUCCEEDED"}
+              ], "Next": "CrawlerConcluido"}
+            ],
+            "Default": "CrawlerFalhou"
+          },
+          "CrawlerConcluido": {"Type": "Succeed"},
+          "CrawlerFalhou": {"Type": "Fail", "Error": "GlueCrawlerFailed", "Cause": "Crawler não concluiu com status SUCCEEDED"}
+        }
+      },
+      "End": true
+    }
+  }
+}

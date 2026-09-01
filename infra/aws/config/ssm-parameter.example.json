@@ -1,0 +1,5 @@
+{
+  "name": "/tc2/google-bigquery-credentials",
+  "type": "SecureString",
+  "value": "<GOOGLE_BIGQUERY_CREDENTIALS_JSON>"
+}

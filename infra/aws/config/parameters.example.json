@@ -1,0 +1,11 @@
+{
+  "Region": "us-east-1",
+  "LabRoleName": "LabRole",
+  "GoogleCredentialsParameterName": "/tc2/google-bigquery-credentials",
+  "AwsSdkPandasLayerArn": "arn:aws:lambda:us-east-1:336392948345:layer:AWSSDKPandas-Python312:31",
+  "GlueNumberOfWorkers": 10,
+  "EnableBudget": "false",
+  "BudgetLimitUsd": 10,
+  "BudgetAlertThresholdUsd": 8,
+  "BudgetNotificationEmail": ""
+}

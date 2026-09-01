@@ -1,0 +1,722 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  Pipeline de alfabetização Bronze-Silver-Gold para o trabalho acadêmico,
+  com nomes físicos padronizados e LabRole fornecida pelo Learner Lab.
+
+Metadata:
+  AWSToolsMetrics:
+    AWSAgentToolkit: aws-cloudformation@2
+  com.aws.cloudformation.Context:
+    arch: API/EventBridge -> Lambda; Step Functions -> ingestão -> Glue Silver -> Glue Gold
+    must:
+      - usar LabRole existente; não recriar recursos internos do Academy
+      - nome do parâmetro SSM pode ser público; valor SecureString nunca entra no template
+    ref:
+      - at: ../../../docs/ARQUITETURA.md
+        has: arquitetura funcional e limites conhecidos
+        scope: repository
+      - at: ../../../docs/reproducao/README.md
+        has: procedimento de reprodução
+        scope: repository
+
+Parameters:
+  ArtifactBucketName:
+    Type: String
+    MinLength: 3
+  ArtifactPrefix:
+    Type: String
+    MinLength: 1
+  LabRoleName:
+    Type: String
+    Default: LabRole
+    AllowedPattern: '^[A-Za-z0-9+=,.@_-]+$'
+  GoogleCredentialsParameterName:
+    Type: String
+    Default: /tc2/google-bigquery-credentials
+    AllowedPattern: '^/[A-Za-z0-9_.\-/]+$'
+  AwsSdkPandasLayerArn:
+    Type: String
+    Default: arn:aws:lambda:us-east-1:336392948345:layer:AWSSDKPandas-Python312:31
+  GlueNumberOfWorkers:
+    Type: Number
+    Default: 10
+    MinValue: 2
+    MaxValue: 10
+  EnableBudget:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+  BudgetLimitUsd:
+    Type: Number
+    Default: 10
+    MinValue: 1
+  BudgetAlertThresholdUsd:
+    Type: Number
+    Default: 8
+    MinValue: 1
+  BudgetNotificationEmail:
+    Type: String
+    Default: ''
+    NoEcho: true
+    AllowedPattern: '^$|^[^@\s]+@[^@\s]+\.[^@\s]+$'
+
+Conditions:
+  CreateBudget: !Equals [!Ref EnableBudget, 'true']
+  HasBudgetNotificationEmail: !Not [!Equals [!Ref BudgetNotificationEmail, '']]
+
+Resources:
+  BronzeBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: recebe Parquet imutável das fontes BigQuery, IBGE e API de metas
+        must: [acesso público bloqueado, nome físico padronizado por conta e região]
+    Properties:
+      BucketName: !Sub 'bucket-bronze-${AWS::AccountId}-${AWS::Region}-an'
+      BucketNamespace: account-regional
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration: {Status: Enabled}
+      LifecycleConfiguration:
+        Rules:
+          - Id: bronze-cost-optimization
+            Status: Enabled
+            Prefix: ''
+            ExpiredObjectDeleteMarker: true
+            AbortIncompleteMultipartUpload: {DaysAfterInitiation: 10}
+            Transitions:
+              - {StorageClass: INTELLIGENT_TIERING, TransitionInDays: 30}
+              - {StorageClass: GLACIER_IR, TransitionInDays: 60}
+              - {StorageClass: DEEP_ARCHIVE, TransitionInDays: 180}
+
+  SilverBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: armazena dados normalizados e enriquecidos produzidos pelos quatro jobs Silver
+        must: [acesso público bloqueado, nome físico padronizado por conta e região]
+    Properties:
+      BucketName: !Sub 'bucket-silver-${AWS::AccountId}-${AWS::Region}-an'
+      BucketNamespace: account-regional
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration: {Status: Enabled}
+      LifecycleConfiguration:
+        Rules:
+          - Id: silver-cost-optimization
+            Status: Enabled
+            Prefix: ''
+            ExpiredObjectDeleteMarker: true
+            AbortIncompleteMultipartUpload: {DaysAfterInitiation: 10}
+            Transitions:
+              - {StorageClass: INTELLIGENT_TIERING, TransitionInDays: 60}
+
+  GoldBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: armazena indicadores, metas, evolução temporal e dataset analítico
+        must: [acesso público bloqueado, nome físico padronizado por conta e região]
+    Properties:
+      BucketName: !Sub 'bucket-gold-${AWS::AccountId}-${AWS::Region}-an'
+      BucketNamespace: account-regional
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration: {Status: Enabled}
+      LifecycleConfiguration:
+        Rules:
+          - Id: gold-cost-optimization
+            Status: Enabled
+            Prefix: ''
+            Transitions:
+              - {StorageClass: INTELLIGENT_TIERING, TransitionInDays: 180}
+
+  DataBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref BronzeBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource: [!GetAtt BronzeBucket.Arn, !Sub '${BronzeBucket.Arn}/*']
+            Condition: {Bool: {aws:SecureTransport: 'false'}}
+
+  SilverBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref SilverBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource: [!GetAtt SilverBucket.Arn, !Sub '${SilverBucket.Arn}/*']
+            Condition: {Bool: {aws:SecureTransport: 'false'}}
+
+  GoldBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref GoldBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource: [!GetAtt GoldBucket.Arn, !Sub '${GoldBucket.Arn}/*']
+            Condition: {Bool: {aws:SecureTransport: 'false'}}
+
+  DependenciasGoogleLayer:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+      LayerName: dependenciasGoogle
+      Description: Dependências Google Cloud geradas a partir de requirements.txt.
+      CompatibleArchitectures: [x86_64]
+      CompatibleRuntimes: [python3.12]
+      Content:
+        S3Bucket: !Ref ArtifactBucketName
+        S3Key: !Sub '${ArtifactPrefix}/lambda/layers/dependenciasGoogle.zip'
+
+  CargaFunction:
+    Type: AWS::Lambda::Function
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: ingere sete tabelas Base dos Dados/BigQuery para a Bronze
+        must: [credencial lida do SSM em runtime, nunca empacotar google.json]
+    Properties:
+      FunctionName: batchCargaBaseDadosIndicadorAlfabetizacao
+      Runtime: python3.12
+      Architectures: [x86_64]
+      Handler: lambda_function.lambda_handler
+      Role: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${LabRoleName}'
+      MemorySize: 1024
+      Timeout: 900
+      EphemeralStorage: {Size: 512}
+      Layers: [!Ref AwsSdkPandasLayerArn, !Ref DependenciasGoogleLayer]
+      Code:
+        S3Bucket: !Ref ArtifactBucketName
+        S3Key: !Sub '${ArtifactPrefix}/lambda/batchCargaBaseDadosIndicadorAlfabetizacao.zip'
+      Environment:
+        Variables:
+          BRONZE_BUCKET: !Ref BronzeBucket
+          GOOGLE_CREDENTIALS_PARAMETER: !Ref GoogleCredentialsParameterName
+
+  CargaMunicipiosFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: batchCargaTabelaMunicipioIBGE
+      Runtime: python3.12
+      Architectures: [x86_64]
+      Handler: lambda_function.lambda_handler
+      Role: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${LabRoleName}'
+      MemorySize: 128
+      Timeout: 60
+      EphemeralStorage: {Size: 512}
+      Layers: [!Ref AwsSdkPandasLayerArn]
+      Code:
+        S3Bucket: !Ref ArtifactBucketName
+        S3Key: !Sub '${ArtifactPrefix}/lambda/batchCargaTabelaMunicipioIBGE.zip'
+      Environment:
+        Variables: {BRONZE_BUCKET: !Ref BronzeBucket}
+
+  GlueDatabase:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Name: tc2-alfabetizacao
+        Description: Catálogo da camada Gold para validação com Athena.
+
+  SilverAlunoJob:
+    Type: AWS::Glue::Job
+    Properties:
+      Name: bronze-to-silver-alunos
+      Role: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${LabRoleName}'
+      GlueVersion: '5.1'
+      WorkerType: G.1X
+      NumberOfWorkers: !Ref GlueNumberOfWorkers
+      ExecutionProperty: {MaxConcurrentRuns: 1}
+      Command:
+        Name: glueetl
+        PythonVersion: '3'
+        ScriptLocation: !Sub 's3://${ArtifactBucketName}/${ArtifactPrefix}/glue/bronze_to_silver_aluno_job.py'
+      DefaultArguments:
+        '--BRONZE_BUCKET': !Ref BronzeBucket
+        '--SILVER_BUCKET': !Ref SilverBucket
+        '--enable-metrics': 'true'
+        '--enable-continuous-cloudwatch-log': 'true'
+
+  SilverMunicipioJob:
+    Type: AWS::Glue::Job
+    Properties:
+      Name: bronze-to-silver-municipios
+      Role: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${LabRoleName}'
+      GlueVersion: '5.1'
+      WorkerType: G.1X
+      NumberOfWorkers: !Ref GlueNumberOfWorkers
+      ExecutionProperty: {MaxConcurrentRuns: 1}
+      Command:
+        Name: glueetl
+        PythonVersion: '3'
+        ScriptLocation: !Sub 's3://${ArtifactBucketName}/${ArtifactPrefix}/glue/bronze_to_silver_municipio_job.py'
+      DefaultArguments: {'--BRONZE_BUCKET': !Ref BronzeBucket, '--SILVER_BUCKET': !Ref SilverBucket, '--enable-metrics': 'true', '--enable-continuous-cloudwatch-log': 'true'}
+
+  SilverUfJob:
+    Type: AWS::Glue::Job
+    Properties:
+      Name: bronze-to-silver-uf
+      Role: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${LabRoleName}'
+      GlueVersion: '5.1'
+      WorkerType: G.1X
+      NumberOfWorkers: !Ref GlueNumberOfWorkers
+      ExecutionProperty: {MaxConcurrentRuns: 1}
+      Command: {Name: glueetl, PythonVersion: '3', ScriptLocation: !Sub 's3://${ArtifactBucketName}/${ArtifactPrefix}/glue/bronze_to_silver_uf_job.py'}
+      DefaultArguments: {'--BRONZE_BUCKET': !Ref BronzeBucket, '--SILVER_BUCKET': !Ref SilverBucket, '--enable-metrics': 'true', '--enable-continuous-cloudwatch-log': 'true'}
+
+  SilverMetaJob:
+    Type: AWS::Glue::Job
+    Properties:
+      Name: bronze-to-silver-metas
+      Role: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${LabRoleName}'
+      GlueVersion: '5.1'
+      WorkerType: G.1X
+      NumberOfWorkers: !Ref GlueNumberOfWorkers
+      ExecutionProperty: {MaxConcurrentRuns: 1}
+      Command: {Name: glueetl, PythonVersion: '3', ScriptLocation: !Sub 's3://${ArtifactBucketName}/${ArtifactPrefix}/glue/bronze_to_silver_meta_job.py'}
+      DefaultArguments: {'--BRONZE_BUCKET': !Ref BronzeBucket, '--SILVER_BUCKET': !Ref SilverBucket, '--enable-metrics': 'true', '--enable-continuous-cloudwatch-log': 'true'}
+
+  GoldJob:
+    Type: AWS::Glue::Job
+    Properties:
+      Name: silver-to-gold
+      Role: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${LabRoleName}'
+      GlueVersion: '5.1'
+      WorkerType: G.1X
+      NumberOfWorkers: !Ref GlueNumberOfWorkers
+      ExecutionProperty: {MaxConcurrentRuns: 1}
+      Command: {Name: glueetl, PythonVersion: '3', ScriptLocation: !Sub 's3://${ArtifactBucketName}/${ArtifactPrefix}/glue/gold_job.py'}
+      DefaultArguments: {'--SILVER_BUCKET': !Ref SilverBucket, '--GOLD_BUCKET': !Ref GoldBucket, '--enable-metrics': 'true', '--enable-continuous-cloudwatch-log': 'true'}
+
+  IndicadorUfCrawler:
+    Type: AWS::Glue::Crawler
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: cataloga a saída Gold indicador_uf depois de cada execução da pipeline
+        must: [usar o database Gold existente, apontar apenas para o prefixo indicador_uf]
+    Properties:
+      Name: tc2-crawler-indicador-uf
+      Role: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${LabRoleName}'
+      DatabaseName: !Ref GlueDatabase
+      Targets:
+        S3Targets:
+          - Path: !Sub 's3://${GoldBucket}/indicador_uf/'
+      RecrawlPolicy: {RecrawlBehavior: CRAWL_EVERYTHING}
+      SchemaChangePolicy: {UpdateBehavior: UPDATE_IN_DATABASE, DeleteBehavior: LOG}
+      LineageConfiguration: {CrawlerLineageSettings: DISABLE}
+
+  EvolucaoTemporalBrasilCrawler:
+    Type: AWS::Glue::Crawler
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: cataloga a evolução temporal nacional produzida pela Gold
+        must: [usar o database Gold existente, apontar apenas para evolucao_temporal_brasil]
+    Properties:
+      Name: tc2-crawler-evolucao-brasil
+      Role: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${LabRoleName}'
+      DatabaseName: !Ref GlueDatabase
+      Targets: {S3Targets: [{Path: !Sub 's3://${GoldBucket}/evolucao_temporal_brasil/'}]}
+      RecrawlPolicy: {RecrawlBehavior: CRAWL_EVERYTHING}
+      SchemaChangePolicy: {UpdateBehavior: UPDATE_IN_DATABASE, DeleteBehavior: LOG}
+      LineageConfiguration: {CrawlerLineageSettings: DISABLE}
+
+  EvolucaoTemporalMunicipioCrawler:
+    Type: AWS::Glue::Crawler
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: cataloga a evolução temporal municipal produzida pela Gold
+        must: [usar o database Gold existente, apontar apenas para evolucao_temporal_municipio]
+    Properties:
+      Name: tc2-crawler-evolucao-municipio
+      Role: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${LabRoleName}'
+      DatabaseName: !Ref GlueDatabase
+      Targets: {S3Targets: [{Path: !Sub 's3://${GoldBucket}/evolucao_temporal_municipio/'}]}
+      RecrawlPolicy: {RecrawlBehavior: CRAWL_EVERYTHING}
+      SchemaChangePolicy: {UpdateBehavior: UPDATE_IN_DATABASE, DeleteBehavior: LOG}
+      LineageConfiguration: {CrawlerLineageSettings: DISABLE}
+
+  EvolucaoTemporalUfCrawler:
+    Type: AWS::Glue::Crawler
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: cataloga a evolução temporal por UF produzida pela Gold
+        must: [usar o database Gold existente, apontar apenas para evolucao_temporal_uf]
+    Properties:
+      Name: tc2-crawler-evolucao-uf
+      Role: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${LabRoleName}'
+      DatabaseName: !Ref GlueDatabase
+      Targets: {S3Targets: [{Path: !Sub 's3://${GoldBucket}/evolucao_temporal_uf/'}]}
+      RecrawlPolicy: {RecrawlBehavior: CRAWL_EVERYTHING}
+      SchemaChangePolicy: {UpdateBehavior: UPDATE_IN_DATABASE, DeleteBehavior: LOG}
+      LineageConfiguration: {CrawlerLineageSettings: DISABLE}
+
+  IndicadorBrasilCrawler:
+    Type: AWS::Glue::Crawler
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: cataloga o indicador nacional produzido pela Gold
+        must: [usar o database Gold existente, apontar apenas para indicador_brasil]
+    Properties:
+      Name: tc2-crawler-indicador-brasil
+      Role: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${LabRoleName}'
+      DatabaseName: !Ref GlueDatabase
+      Targets: {S3Targets: [{Path: !Sub 's3://${GoldBucket}/indicador_brasil/'}]}
+      RecrawlPolicy: {RecrawlBehavior: CRAWL_EVERYTHING}
+      SchemaChangePolicy: {UpdateBehavior: UPDATE_IN_DATABASE, DeleteBehavior: LOG}
+      LineageConfiguration: {CrawlerLineageSettings: DISABLE}
+
+  IndicadorMunicipioCrawler:
+    Type: AWS::Glue::Crawler
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: cataloga o indicador municipal produzido pela Gold
+        must: [usar o database Gold existente, apontar apenas para indicador_municipio]
+    Properties:
+      Name: tc2-crawler-indicador-municipio
+      Role: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${LabRoleName}'
+      DatabaseName: !Ref GlueDatabase
+      Targets: {S3Targets: [{Path: !Sub 's3://${GoldBucket}/indicador_municipio/'}]}
+      RecrawlPolicy: {RecrawlBehavior: CRAWL_EVERYTHING}
+      SchemaChangePolicy: {UpdateBehavior: UPDATE_IN_DATABASE, DeleteBehavior: LOG}
+      LineageConfiguration: {CrawlerLineageSettings: DISABLE}
+
+  MetasVsResultadoBrasilCrawler:
+    Type: AWS::Glue::Crawler
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: cataloga a comparação nacional entre metas e resultados
+        must: [usar o database Gold existente, apontar apenas para metas_vs_resultado_brasil]
+    Properties:
+      Name: tc2-crawler-metas-brasil
+      Role: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${LabRoleName}'
+      DatabaseName: !Ref GlueDatabase
+      Targets: {S3Targets: [{Path: !Sub 's3://${GoldBucket}/metas_vs_resultado_brasil/'}]}
+      RecrawlPolicy: {RecrawlBehavior: CRAWL_EVERYTHING}
+      SchemaChangePolicy: {UpdateBehavior: UPDATE_IN_DATABASE, DeleteBehavior: LOG}
+      LineageConfiguration: {CrawlerLineageSettings: DISABLE}
+
+  MetasVsResultadoMunicipioCrawler:
+    Type: AWS::Glue::Crawler
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: cataloga a comparação municipal entre metas e resultados
+        must: [usar o database Gold existente, apontar apenas para metas_vs_resultado_municipio]
+    Properties:
+      Name: tc2-crawler-metas-municipio
+      Role: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${LabRoleName}'
+      DatabaseName: !Ref GlueDatabase
+      Targets: {S3Targets: [{Path: !Sub 's3://${GoldBucket}/metas_vs_resultado_municipio/'}]}
+      RecrawlPolicy: {RecrawlBehavior: CRAWL_EVERYTHING}
+      SchemaChangePolicy: {UpdateBehavior: UPDATE_IN_DATABASE, DeleteBehavior: LOG}
+      LineageConfiguration: {CrawlerLineageSettings: DISABLE}
+
+  MetasVsResultadoUfCrawler:
+    Type: AWS::Glue::Crawler
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: cataloga a comparação por UF entre metas e resultados
+        must: [usar o database Gold existente, apontar apenas para metas_vs_resultado_uf]
+    Properties:
+      Name: tc2-crawler-metas-uf
+      Role: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${LabRoleName}'
+      DatabaseName: !Ref GlueDatabase
+      Targets: {S3Targets: [{Path: !Sub 's3://${GoldBucket}/metas_vs_resultado_uf/'}]}
+      RecrawlPolicy: {RecrawlBehavior: CRAWL_EVERYTHING}
+      SchemaChangePolicy: {UpdateBehavior: UPDATE_IN_DATABASE, DeleteBehavior: LOG}
+      LineageConfiguration: {CrawlerLineageSettings: DISABLE}
+
+  PipelineLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/vendedlogs/states/pipeline-alfabetizacao
+      RetentionInDays: 7
+
+  PipelineStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: externaliza a ordem e paralelismo do pipeline para avaliação visual
+        must: [executar Glue com integração .sync, não transportar credenciais no estado]
+    Properties:
+      StateMachineName: pipeline-alfabetizacao
+      StateMachineType: STANDARD
+      RoleArn: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${LabRoleName}'
+      DefinitionS3Location:
+        Bucket: !Ref ArtifactBucketName
+        Key: !Sub '${ArtifactPrefix}/step-functions/pipeline-alfabetizacao.asl.json'
+      DefinitionSubstitutions:
+        CargaFunctionArn: !GetAtt CargaFunction.Arn
+        CargaMunicipiosFunctionArn: !GetAtt CargaMunicipiosFunction.Arn
+        SilverUfJobName: !Ref SilverUfJob
+        SilverMunicipioJobName: !Ref SilverMunicipioJob
+        SilverAlunoJobName: !Ref SilverAlunoJob
+        SilverMetaJobName: !Ref SilverMetaJob
+        GoldJobName: !Ref GoldJob
+        EvolucaoTemporalBrasilCrawlerName: !Ref EvolucaoTemporalBrasilCrawler
+        EvolucaoTemporalMunicipioCrawlerName: !Ref EvolucaoTemporalMunicipioCrawler
+        EvolucaoTemporalUfCrawlerName: !Ref EvolucaoTemporalUfCrawler
+        IndicadorBrasilCrawlerName: !Ref IndicadorBrasilCrawler
+        IndicadorMunicipioCrawlerName: !Ref IndicadorMunicipioCrawler
+        IndicadorUfCrawlerName: !Ref IndicadorUfCrawler
+        MetasVsResultadoBrasilCrawlerName: !Ref MetasVsResultadoBrasilCrawler
+        MetasVsResultadoMunicipioCrawlerName: !Ref MetasVsResultadoMunicipioCrawler
+        MetasVsResultadoUfCrawlerName: !Ref MetasVsResultadoUfCrawler
+      LoggingConfiguration:
+        Destinations:
+          - CloudWatchLogsLogGroup: {LogGroupArn: !GetAtt PipelineLogGroup.Arn}
+        IncludeExecutionData: false
+        Level: ERROR
+
+  CargaMetaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: streamMetaAlfabetizacaoBrasil
+      Runtime: python3.12
+      Architectures: [x86_64]
+      Handler: lambda_function.lambda_handler
+      Role: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${LabRoleName}'
+      MemorySize: 128
+      Timeout: 63
+      EphemeralStorage: {Size: 512}
+      Layers: [!Ref AwsSdkPandasLayerArn]
+      Code:
+        S3Bucket: !Ref ArtifactBucketName
+        S3Key: !Sub '${ArtifactPrefix}/lambda/streamMetaAlfabetizacaoBrasil.zip'
+      Environment:
+        Variables:
+          BRONZE_BUCKET: !Ref BronzeBucket
+          STATE_MACHINE_ARN: !Ref PipelineStateMachine
+
+  StreamingRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: evento-metas
+      State: ENABLED
+      EventPattern:
+        source: [com.tc2]
+        detail-type: [metas]
+      Targets:
+        - Arn: !GetAtt CargaMetaFunction.Arn
+          Id: carga-meta
+
+  StreamingRulePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref CargaMetaFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt StreamingRule.Arn
+
+  StreamingApi:
+    Type: AWS::ApiGatewayV2::Api
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: prova de conceito de ingestão HTTP; endpoint público por decisão acadêmica
+        must: [documentar que AuthorizationType NONE não é adequado para produção]
+    Properties:
+      Name: api-metas
+      ProtocolType: HTTP
+
+  StreamingIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref StreamingApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt CargaMetaFunction.Arn
+      PayloadFormatVersion: '2.0'
+
+  StreamingRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref StreamingApi
+      RouteKey: POST /metas
+      AuthorizationType: NONE
+      Target: !Sub 'integrations/${StreamingIntegration}'
+
+  StreamingStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref StreamingApi
+      StageName: '$default'
+      AutoDeploy: true
+      DefaultRouteSettings: {ThrottlingBurstLimit: 2, ThrottlingRateLimit: 1}
+
+  StreamingApiPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref CargaMetaFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${StreamingApi}/*/POST/metas'
+
+  CargaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties: {LogGroupName: !Sub '/aws/lambda/${CargaFunction}', RetentionInDays: 7}
+  CargaMunicipiosLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties: {LogGroupName: !Sub '/aws/lambda/${CargaMunicipiosFunction}', RetentionInDays: 7}
+  CargaMetaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties: {LogGroupName: !Sub '/aws/lambda/${CargaMetaFunction}', RetentionInDays: 7}
+
+  OperationsDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: centraliza sinais operacionais de Lambda, S3, Glue, API e cobrança observados no ambiente acadêmico
+        must: [usar referências da stack; não fixar bucket, API ID ou account ID]
+    Properties:
+      DashboardName: tc2-cloudwatch-dashboard
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric", "x": 0, "y": 0, "width": 12, "height": 7,
+              "properties": {
+                "title": "Lambda", "view": "timeSeries", "stacked": false,
+                "region": "${AWS::Region}", "period": 300,
+                "metrics": [
+                  ["AWS/Lambda", "Invocations", "FunctionName", "${CargaFunction}"],
+                  [".", "Errors", ".", "."], [".", "Duration", ".", "."],
+                  ["AWS/Lambda", "Invocations", "FunctionName", "${CargaMunicipiosFunction}"],
+                  [".", "Errors", ".", "."], [".", "Duration", ".", "."],
+                  ["AWS/Lambda", "Invocations", "FunctionName", "${CargaMetaFunction}"],
+                  [".", "Errors", ".", "."], [".", "Duration", ".", "."]
+                ]
+              }
+            },
+            {
+              "type": "metric", "x": 12, "y": 0, "width": 12, "height": 7,
+              "properties": {
+                "title": "Buckets", "view": "timeSeries", "stacked": false,
+                "region": "${AWS::Region}", "period": 86400,
+                "metrics": [
+                  ["AWS/S3", "BucketSizeBytes", "BucketName", "${BronzeBucket}", "StorageType", "StandardStorage"],
+                  [".", "NumberOfObjects", ".", ".", ".", "AllStorageTypes"],
+                  ["AWS/S3", "BucketSizeBytes", "BucketName", "${SilverBucket}", "StorageType", "StandardStorage"],
+                  [".", "NumberOfObjects", ".", ".", ".", "AllStorageTypes"],
+                  ["AWS/S3", "BucketSizeBytes", "BucketName", "${GoldBucket}", "StorageType", "StandardStorage"],
+                  [".", "NumberOfObjects", ".", ".", ".", "AllStorageTypes"]
+                ]
+              }
+            },
+            {
+              "type": "metric", "x": 0, "y": 7, "width": 12, "height": 7,
+              "properties": {
+                "title": "Glue", "view": "timeSeries", "stacked": false,
+                "region": "${AWS::Region}", "period": 300,
+                "metrics": [
+                  ["Glue", "glue.driver.aggregate.numCompletedTasks", "JobName", "${SilverAlunoJob}", "JobRunId", "ALL", "Type", "gauge"],
+                  [".", "glue.driver.aggregate.numFailedTasks", ".", ".", ".", ".", ".", "."],
+                  ["Glue", "glue.driver.aggregate.numCompletedTasks", "JobName", "${GoldJob}", "JobRunId", "ALL", "Type", "gauge"],
+                  [".", "glue.driver.aggregate.numFailedTasks", ".", ".", ".", ".", ".", "."]
+                ]
+              }
+            },
+            {
+              "type": "metric", "x": 12, "y": 7, "width": 6, "height": 7,
+              "properties": {
+                "title": "API", "view": "timeSeries", "stacked": false,
+                "region": "${AWS::Region}", "period": 300,
+                "metrics": [
+                  ["AWS/ApiGateway", "Count", "ApiId", "${StreamingApi}", "Stage", "$default"],
+                  [".", "4xx", ".", ".", ".", "."],
+                  [".", "5xx", ".", ".", ".", "."],
+                  [".", "Latency", ".", ".", ".", "."]
+                ]
+              }
+            },
+            {
+              "type": "metric", "x": 18, "y": 7, "width": 6, "height": 7,
+              "properties": {
+                "title": "Custos estimados", "view": "timeSeries", "stacked": false,
+                "region": "us-east-1", "period": 2592000, "stat": "Maximum",
+                "metrics": [
+                  ["AWS/Billing", "EstimatedCharges", "Currency", "USD"]
+                ]
+              }
+            }
+          ]
+        }
+
+  ProjectBudget:
+    Type: AWS::Budgets::Budget
+    Condition: CreateBudget
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: controle opcional de custo mensal; Learner Lab pode bloquear Budgets
+        must: [sem ações automáticas; e-mail informado apenas no deployment]
+    Properties:
+      Budget:
+        BudgetName: tc2-budget
+        BudgetLimit: {Amount: !Ref BudgetLimitUsd, Unit: USD}
+        BudgetType: COST
+        TimeUnit: MONTHLY
+      NotificationsWithSubscribers: !If
+        - HasBudgetNotificationEmail
+        - - Notification:
+              ComparisonOperator: GREATER_THAN
+              NotificationType: ACTUAL
+              Threshold: !Ref BudgetAlertThresholdUsd
+              ThresholdType: ABSOLUTE_VALUE
+            Subscribers:
+              - Address: !Ref BudgetNotificationEmail
+                SubscriptionType: EMAIL
+        - !Ref AWS::NoValue
+
+Outputs:
+  BronzeBucketName: {Description: Bucket Bronze gerado, Value: !Ref BronzeBucket}
+  SilverBucketName: {Description: Bucket Silver gerado, Value: !Ref SilverBucket}
+  GoldBucketName: {Description: Bucket Gold gerado, Value: !Ref GoldBucket}
+  CargaFunctionName: {Description: Lambda de ingestão BigQuery, Value: !Ref CargaFunction}
+  CargaMunicipiosFunctionName: {Description: Lambda de municípios IBGE, Value: !Ref CargaMunicipiosFunction}
+  CargaMetaFunctionName: {Description: Lambda de ingestão de metas, Value: !Ref CargaMetaFunction}
+  PipelineStateMachineArn: {Description: ARN da Step Function, Value: !Ref PipelineStateMachine}
+  StreamingApiUrl: {Description: URL pública de prova de conceito, Value: !GetAtt StreamingApi.ApiEndpoint}
+  GlueDatabaseName: {Description: Database do Glue Data Catalog, Value: !Ref GlueDatabase}
+  GlueCrawlerName: {Description: Crawler da tabela indicador_uf, Value: !Ref IndicadorUfCrawler}
+  OperationsDashboardName: {Description: Dashboard operacional do projeto, Value: !Ref OperationsDashboard}
+  BudgetName:
+    Condition: CreateBudget
+    Description: Budget mensal opcional do projeto
+    Value: !Ref ProjectBudget

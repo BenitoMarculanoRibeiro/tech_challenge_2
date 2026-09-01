@@ -1,0 +1,10 @@
+{
+  "logicalId": "IndicadorMunicipioCrawler",
+  "name": "tc2-crawler-indicador-municipio",
+  "databaseName": "tc2-alfabetizacao",
+  "role": "LabRole",
+  "target": "s3://${GOLD_BUCKET}/indicador_municipio/",
+  "schemaChangePolicy": { "updateBehavior": "UPDATE_IN_DATABASE", "deleteBehavior": "LOG" },
+  "recrawlPolicy": { "recrawlBehavior": "CRAWL_EVERYTHING" },
+  "lineageConfiguration": { "crawlerLineageSettings": "DISABLE" }
+}
