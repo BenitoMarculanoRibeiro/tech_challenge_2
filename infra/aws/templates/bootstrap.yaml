@@ -27,6 +27,8 @@ Resources:
           - acesso público bloqueado
           - objetos acessíveis apenas por HTTPS
     Properties:
+      BucketName: !Sub 'bucket-artefatos-${AWS::AccountId}-${AWS::Region}-an'
+      BucketNamespace: account-regional
       BucketEncryption:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:

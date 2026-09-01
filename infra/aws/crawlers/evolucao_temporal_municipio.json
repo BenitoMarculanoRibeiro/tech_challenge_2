@@ -1,0 +1,10 @@
+{
+  "logicalId": "EvolucaoTemporalMunicipioCrawler",
+  "name": "tc2-crawler-evolucao-municipio",
+  "databaseName": "tc2-alfabetizacao",
+  "role": "LabRole",
+  "target": "s3://${GOLD_BUCKET}/evolucao_temporal_municipio/",
+  "schemaChangePolicy": { "updateBehavior": "UPDATE_IN_DATABASE", "deleteBehavior": "LOG" },
+  "recrawlPolicy": { "recrawlBehavior": "CRAWL_EVERYTHING" },
+  "lineageConfiguration": { "crawlerLineageSettings": "DISABLE" }
+}

@@ -1,0 +1,10 @@
+{
+  "logicalId": "IndicadorUfCrawler",
+  "name": "tc2-crawler-indicador-uf",
+  "databaseName": "tc2-alfabetizacao",
+  "role": "LabRole",
+  "target": "s3://${GOLD_BUCKET}/indicador_uf/",
+  "schemaChangePolicy": { "updateBehavior": "UPDATE_IN_DATABASE", "deleteBehavior": "LOG" },
+  "recrawlPolicy": { "recrawlBehavior": "CRAWL_EVERYTHING" },
+  "lineageConfiguration": { "crawlerLineageSettings": "DISABLE" }
+}

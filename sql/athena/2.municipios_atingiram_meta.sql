@@ -16,7 +16,7 @@ SELECT
     atingiu_meta,
     ano_meta
 FROM
-    "tc2-glue-database-table"."metas_vs_resultado_municipio"
+    "tc2-alfabetizacao"."metas_vs_resultado_municipio"
 WHERE
     ano = '2024'
     AND ano_meta = 2024

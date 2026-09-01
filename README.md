@@ -6,6 +6,7 @@ em camadas Bronze, Silver e Gold na AWS. Trabalho acadêmico da FIAP, Fase 2.
 ## Navegação
 
 - [Arquitetura](docs/ARQUITETURA.md)
+- [FinOps e estimativa de custos](docs/FINOPS.md)
 - [Documentação técnica](docs/README.md)
 - [Implantação do ambiente](docs/reproducao/README.md)
 - [Parâmetros necessários](docs/reproducao/PARAMETROS.md)
@@ -37,10 +38,12 @@ Consulte [Fontes e dados](docs/FONTES_E_DADOS.md) para origem e limitações.
 3. O job Gold produz indicadores geográficos, comparação com metas, evolução
    temporal e um conjunto preparado para análises futuras.
 4. Step Functions mantém a ordem e o paralelismo do pipeline.
-5. Glue Crawler cataloga `indicador_uf` para consulta opcional no Athena.
+5. Nove Glue Crawlers catalogam as tabelas Gold para consulta no Athena e uso
+   pelo Power BI.
 
-Os nomes físicos dos buckets não ficam no código: CloudFormation os gera e
-propaga para Lambdas e jobs Glue.
+Os buckets usam os prefixos `bucket-bronze`, `bucket-silver` e `bucket-gold`,
+com conta e região acrescentadas pelo CloudFormation para garantir unicidade.
+As referências são propagadas para Lambdas e jobs Glue sem nomes hardcoded.
 
 ## Análises demonstradas
 

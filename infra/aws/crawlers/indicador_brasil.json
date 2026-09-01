@@ -1,0 +1,10 @@
+{
+  "logicalId": "IndicadorBrasilCrawler",
+  "name": "tc2-crawler-indicador-brasil",
+  "databaseName": "tc2-alfabetizacao",
+  "role": "LabRole",
+  "target": "s3://${GOLD_BUCKET}/indicador_brasil/",
+  "schemaChangePolicy": { "updateBehavior": "UPDATE_IN_DATABASE", "deleteBehavior": "LOG" },
+  "recrawlPolicy": { "recrawlBehavior": "CRAWL_EVERYTHING" },
+  "lineageConfiguration": { "crawlerLineageSettings": "DISABLE" }
+}

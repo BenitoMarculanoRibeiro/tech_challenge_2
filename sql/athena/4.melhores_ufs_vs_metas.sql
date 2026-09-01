@@ -14,7 +14,7 @@ WITH trajetoria AS (
         atingiu_meta,
         meta_ja_vencida
     FROM
-        "tc2-glue-database-table"."metas_vs_resultado_uf"
+        "tc2-alfabetizacao"."metas_vs_resultado_uf"
     WHERE
         ano = '2024'
         AND escopo_meta = 'uf'

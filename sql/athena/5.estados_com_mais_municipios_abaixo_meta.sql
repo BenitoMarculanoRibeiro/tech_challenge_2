@@ -16,7 +16,7 @@ WITH meta_vigente AS (
         gap_pp,
         atingiu_meta
     FROM
-        "tc2-glue-database-table"."metas_vs_resultado_municipio"
+        "tc2-alfabetizacao"."metas_vs_resultado_municipio"
     WHERE
         ano = '2024'
         AND escopo_meta = 'municipio'

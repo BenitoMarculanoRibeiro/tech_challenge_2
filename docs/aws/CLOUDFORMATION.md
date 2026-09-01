@@ -15,13 +15,14 @@ Ele possui acesso público bloqueado, versionamento habilitado e exige conexões
 HTTPS.
 
 O `application.yaml` utiliza parâmetros para evitar dependências desnecessárias
-do ambiente, incluindo nomes do projeto, ambiente, bucket de artefatos,
+da implantação, incluindo bucket de artefatos,
 `LabRole`, parâmetro SSM das credenciais do BigQuery, quantidade de workers Glue
 e configuração opcional do AWS Budget.
 
-Os nomes físicos dos buckets Bronze, Silver e Gold são gerados pelo
-CloudFormation. Os scripts recebem essas referências por parâmetros e variáveis
-de ambiente, evitando nomes de buckets fixos no código.
+Os nomes físicos dos buckets Bronze, Silver e Gold seguem prefixos legíveis e
+recebem conta e região via pseudoparâmetros do CloudFormation. Os scripts
+recebem essas referências por parâmetros e variáveis de ambiente, sem copiar
+nomes físicos de outra conta.
 
 Os templates não armazenam credenciais, valores de `SecureString`, IDs de conta
 específicos da implantação ou dados analíticos.

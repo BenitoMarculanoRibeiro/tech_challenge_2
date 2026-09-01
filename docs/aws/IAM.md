@@ -1,6 +1,6 @@
 # IAM e AWS Academy
 
-As Lambdas, os jobs Glue, o crawler e a Step Function utilizam a `LabRole`
+As Lambdas, os jobs Glue, os nove crawlers e a Step Function utilizam a `LabRole`
 disponibilizada pelo AWS Academy Learner Lab.
 
 O template constrói o ARN da `LabRole` utilizando a conta e a região do

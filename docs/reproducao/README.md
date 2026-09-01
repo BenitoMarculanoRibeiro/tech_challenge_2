@@ -25,7 +25,7 @@ Não versione credenciais, e-mails pessoais ou outros valores sensíveis.
    BigQuery.
 3. Gere uma chave JSON e salve-a fora do repositório.
 4. No Systems Manager Parameter Store da sua conta AWS, crie um parâmetro
-   `SecureString` chamado `/fiap/google-bigquery-credentials`.
+   `SecureString` chamado `/tc2/google-bigquery-credentials`.
 5. Use como valor o conteúdo completo do JSON, não o caminho do arquivo.
 
 O [exemplo falso](exemplos/google-bigquery-credentials.example.json) demonstra
@@ -36,6 +36,9 @@ o formato; ele é intencionalmente inválido e não autentica.
 No console do CloudFormation, crie uma stack usando:
 
 - `infra/aws/templates/bootstrap.yaml`
+
+Use o nome de stack `tc2-artefatos`. O bucket resultante seguirá o padrão
+`bucket-artefatos-<conta>-<região>-an`.
 
 Quando a stack terminar, copie o Output `ArtifactBucketName`.
 
@@ -56,6 +59,7 @@ Depois de revisar o plano exibido, publique com:
 ```powershell
 .\infra\aws\publish-artifacts.ps1 `
   -ArtifactBucketName <ARTIFACT_BUCKET_NAME> `
+  -Profile <AWS_PROFILE> `
   -Execute
 ```
 
@@ -69,12 +73,15 @@ No console do CloudFormation, crie outra stack usando:
 
 - `infra/aws/templates/application.yaml`
 
+Use o nome de stack `tc2-pipeline`. IDs, ARNs e o endpoint da API são outputs
+gerados na conta de destino e não devem ser copiados de outro ambiente.
+
 Informe o bucket e o prefixo produzidos nas etapas anteriores. Os demais valores
 podem seguir `infra/aws/config/parameters.example.json`.
 
 A definição da Step Function publicada pelo script vem de:
 
-- `infra/aws/step-functions/tc2-steps.asl.json`
+- `infra/aws/step-functions/pipeline-alfabetizacao.asl.json`
 
 O bootstrap define o bucket utilizado pelos artefatos da aplicação. O template
 principal define os recursos AWS do projeto, incluindo S3, Lambda, Glue,

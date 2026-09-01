@@ -6,6 +6,7 @@ descrições genéricas de serviços.
 ## Visão geral
 
 - [Arquitetura](ARQUITETURA.md)
+- [FinOps e estimativa de custos](FINOPS.md)
 - [Fontes e dados](FONTES_E_DADOS.md)
 - [Serviços AWS](aws/README.md)
 - [Implantação do ambiente](reproducao/README.md)
