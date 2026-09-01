@@ -71,8 +71,11 @@ fornecida.
 
 ## Repositório
 
+- `docs/`: explica como os componentes são usados neste projeto.
+- `evidencias/`: prints que mostram as execuções do projeto.  
 - `glue/`: scripts organizados por etapa.
 - `infra/lambda/`: fonte única das Lambdas.
 - `infra/aws/`: CloudFormation, ASL, configuração e publicação de artefatos.
 - `notebook/`: exploração e leitura das camadas.
 - `Fontes_Complementares/`: arquivos acadêmicos mantidos fora do pipeline AWS.
+- `sql/`: consultas que respondem as perguntas do projeto.
