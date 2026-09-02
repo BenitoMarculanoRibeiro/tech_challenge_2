@@ -102,3 +102,12 @@ Fontes de dados
 Consultas e análises
       ↓
 Machine Learning
+```
+
+## Resultado
+
+Os dados processados pelo pipeline são apresentados em um relatório interativo
+do Power BI, com indicadores de alfabetização, comparação entre resultados e
+metas e análises por município, Unidade da Federação e período.
+
+[Acessar o relatório interativo no Power BI](https://app.powerbi.com/view?r=eyJrIjoiYzZkMzQzMDAtNzc5OS00MjFhLWE4M2UtZTAxMmYzY2ZhMmNiIiwidCI6IjExZGJiZmUyLTg5YjgtNDU0OS1iZTEwLWNlYzM2NGU1OTU1MSIsImMiOjR9)
