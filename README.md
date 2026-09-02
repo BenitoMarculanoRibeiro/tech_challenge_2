@@ -1,81 +1,99 @@
-# Tech Challenge - Alfabetização no Brasil
+# Pipeline de Dados — Alfabetização
 
-Pipeline híbrido batch e streaming para organizar dados públicos de alfabetização
-em camadas Bronze, Silver e Gold na AWS. Trabalho acadêmico da FIAP, Fase 2.
+## Sobre o projeto
 
-## Navegação
+Este projeto tem como objetivo estruturar uma pipeline de dados para organização, tratamento e análise de informações relacionadas à alfabetização no Brasil.
 
-- [Arquitetura](docs/ARQUITETURA.md)
-- [FinOps e estimativa de custos](docs/FINOPS.md)
-- [Documentação técnica](docs/README.md)
-- [Implantação do ambiente](docs/reproducao/README.md)
-- [Parâmetros necessários](docs/reproducao/PARAMETROS.md)
-- [Validação de baixo custo](docs/reproducao/VALIDACAO.md)
-- [Serviços AWS](docs/aws/README.md)
+A solução foi construída em ambiente AWS, utilizando uma arquitetura em camadas para organizar os dados desde sua origem até a disponibilização de estruturas analíticas para consultas e análises.
 
-## Problema e objetivo
+O projeto contempla o levantamento e análise das fontes, definição das perguntas de negócio, preparação das informações, materialização das camadas de dados e consulta das estruturas analíticas.
 
-O projeto organiza resultados, metas e microdados relacionados à alfabetização
-para permitir comparações entre Brasil, unidades da Federação e municípios. O
-objetivo técnico é demonstrar ingestão, transformação, orquestração e catálogo
-de dados com componentes gerenciados da AWS.
+## Objetivo
 
-## Fontes
+Organizar e disponibilizar dados de alfabetização de forma estruturada, permitindo análises relacionadas ao desempenho dos municípios e Unidades da Federação, ao atingimento das metas e à evolução dos indicadores ao longo do período analisado.
 
-- Base dos Dados/BigQuery: sete tabelas do conjunto
-  `br_inep_avaliacao_alfabetizacao`.
-- API de Localidades do IBGE: identificação e UF dos municípios.
-- API HTTP de prova de conceito: atualização pontual de metas.
-- Censo Escolar e INSE: fontes complementares mantidas para exploração, ainda
-  fora do pipeline implantado.
+A solução também foi estruturada de forma a permitir sua evolução futura para novas análises, relatórios e aplicações de Inteligência Artificial.
 
-Consulte [Fontes e dados](docs/FONTES_E_DADOS.md) para origem e limitações.
+## Fontes de dados
 
-## Metodologia e processamento
+### Base principal — Avaliação da Alfabetização
 
-1. Lambdas gravam dados de origem em Parquet na Bronze.
-2. Quatro jobs Glue normalizam alunos, municípios, UF e metas na Silver.
-3. O job Gold produz indicadores geográficos, comparação com metas, evolução
-   temporal e um conjunto preparado para análises futuras.
-4. Step Functions mantém a ordem e o paralelismo do pipeline.
-5. Nove Glue Crawlers catalogam as tabelas Gold para consulta no Athena e uso
-   pelo Power BI.
+Fonte principal utilizada no projeto, contendo informações relacionadas aos resultados de alfabetização, municípios, Unidades da Federação e metas de alfabetização.
 
-Os buckets usam os prefixos `bucket-bronze`, `bucket-silver` e `bucket-gold`,
-com conta e região acrescentadas pelo CloudFormation para garantir unicidade.
-As referências são propagadas para Lambdas e jobs Glue sem nomes hardcoded.
+### API de Localidades — IBGE
 
-## Análises demonstradas
+Utilizada como fonte de apoio para identificação e relacionamento das informações municipais, incluindo códigos e nomes dos municípios e informações territoriais utilizadas nas análises.
 
-Os notebooks documentam o inventário das fontes, relacionamentos possíveis e
-perguntas analíticas, incluindo distância para metas, comparação territorial e
-contextos educacional e socioeconômico. Eles não comprovam ainda conclusões
-quantitativas finais; por isso este README não apresenta rankings ou resultados
-que não estejam materializados e validados.
+> **Observação:** Censo Escolar 2023 e INSE 2023 foram analisados durante a etapa exploratória do projeto, mas não fazem parte das fontes utilizadas na versão final das análises.
 
-## Segurança e implantação
+## Estrutura do projeto
 
-A credencial Google é fornecida pelo próprio usuário como `SecureString` no
-Parameter Store. Nenhuma credencial real é versionada. O endpoint `POST /metas`
-é público exclusivamente como prova de conceito acadêmica, com throttling baixo;
-não deve ser usado dessa forma em produção.
+O projeto foi organizado em três notebooks complementares.
 
-O ambiente suportado é o Learner Lab em `us-east-1`, utilizando a `LabRole` já
-fornecida.
+### Notebook 1 — Análise de Dados
 
-## Limitações conhecidas
+Responsável pelo levantamento e análise das fontes de dados utilizadas no projeto.
 
-- Censo Escolar e INSE ainda não entram nas transformações AWS.
-- A validação completa executa Lambda/Glue e pode consumir créditos do Lab.
-- O repositório não contém o valor da credencial Google nem ZIPs de deployment.
+Principais atividades:
 
-## Repositório
+- análise da Base de Avaliação da Alfabetização;
+- identificação das tabelas e estruturas disponíveis;
+- levantamento de variáveis;
+- identificação dos tipos de dados;
+- análise dos padrões de nomenclatura;
+- consulta à API de Localidades do IBGE;
+- identificação das informações necessárias para as etapas posteriores.
 
-- `docs/`: explica como os componentes são usados neste projeto.
-- `evidencias/`: prints que mostram as execuções do projeto.  
-- `glue/`: scripts organizados por etapa.
-- `infra/lambda/`: fonte única das Lambdas.
-- `infra/aws/`: CloudFormation, ASL, configuração e publicação de artefatos.
-- `notebook/`: exploração e leitura das camadas.
-- `Fontes_Complementares/`: arquivos acadêmicos mantidos fora do pipeline AWS.
-- `sql/`: consultas que respondem as perguntas do projeto.
+### Notebook 2 — Relacionamento e Análise das Bases
+
+Responsável pela definição das perguntas de análise e pelo levantamento dos dados e relacionamentos necessários para respondê-las.
+
+Principais atividades:
+
+- definição das perguntas de análise;
+- identificação dos dados necessários;
+- definição das chaves de relacionamento;
+- definição das variáveis necessárias;
+- preparação das informações para as camadas Prata e Gold;
+- definição das análises e visualizações possíveis.
+
+### Notebook 3 — Consultas Camadas
+
+Responsável pela leitura, conferência e consulta dos dados materializados nas camadas Bronze, Prata e Gold no ambiente AWS.
+
+Principais atividades:
+
+- configuração e acesso aos buckets;
+- conferência das estruturas disponíveis;
+- leitura das camadas Bronze e Prata;
+- leitura e consulta das estruturas da Gold;
+- conferência de dimensões e tipos;
+- leitura por amostra para bases de grande volume;
+- utilização de partições quando aplicável;
+- consultas orientadas às perguntas de análise.
+
+## Perguntas de análise
+
+As análises do projeto foram orientadas pelas seguintes perguntas:
+
+1. Qual é o indicador de alfabetização por município?
+2. Quais municípios atingiram ou superaram as metas estabelecidas?
+3. Como o indicador de alfabetização evoluiu entre 2019 e 2025?
+4. Qual é a distância entre a meta estabelecida e o resultado observado por município?
+5. Quais regiões concentram maior desigualdade nos resultados de alfabetização?
+6. Qual porte de município apresenta melhor desempenho de alfabetização?
+
+## Arquitetura de dados
+
+A solução utiliza uma arquitetura em camadas:
+
+```text
+Fontes de dados
+      ↓
+   Bronze
+      ↓
+   Prata
+      ↓
+    Gold
+      ↓
+Consultas e análises
